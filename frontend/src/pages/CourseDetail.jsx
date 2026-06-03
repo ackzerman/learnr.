@@ -11,7 +11,7 @@ import { useToast } from '../hooks/useToast';
 /* ─── Add video form ─────────────────────────────────────────────────────── */
 function AddVideoForm({ courseId, onDone }) {
   const [form, setForm] = useState({ title: '', duration: '', videoUrl: '' });
-  const [err, setErr]   = useState('');
+  const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const F = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -28,9 +28,9 @@ function AddVideoForm({ courseId, onDone }) {
 
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <LabelInput label="Title"            placeholder="Video title"          value={form.title}    onChange={F('title')}    required />
+      <LabelInput label="Title" placeholder="Video title" value={form.title} onChange={F('title')} required />
       <LabelInput label="Duration (seconds)" type="number" min="1" placeholder="e.g. 600 for 10 min" value={form.duration} onChange={F('duration')} required hint="Convert minutes × 60" />
-      <LabelInput label="Video URL (optional)" type="url" placeholder="https://..."                   value={form.videoUrl} onChange={F('videoUrl')} />
+      <LabelInput label="Video URL (optional)" type="url" placeholder="https://..." value={form.videoUrl} onChange={F('videoUrl')} />
       <ErrBox msg={err} />
       <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Adding…' : 'ADD VIDEO'}</button>
     </form>
@@ -39,15 +39,15 @@ function AddVideoForm({ courseId, onDone }) {
 
 /* ─── Course detail ──────────────────────────────────────────────────────── */
 export default function CourseDetail() {
-  const { id }   = useParams();
+  const { id } = useParams();
   const navigate = useNavigate();
-  const toast    = useToast();
+  const toast = useToast();
 
-  const [data, setData]         = useState(null);
-  const [loading, setLoading]   = useState(true);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState('');
-  const [editTags, setEditTags]   = useState('');
+  const [editTags, setEditTags] = useState('');
   const [showAddVideo, setShowAddVideo] = useState(false);
 
   // Track starred state locally so toggling is instant without a full reload
@@ -112,7 +112,7 @@ export default function CourseDetail() {
   };
 
   if (loading) return <Spinner pad={80} />;
-  if (!data)   return <p style={{ color: '#747879', textAlign: 'center', padding: 60 }}>Course not found.</p>;
+  if (!data) return <p style={{ color: '#747879', textAlign: 'center', padding: 60 }}>Course not found.</p>;
 
   const { course, stats, videos } = data;
   const isYT = course.source === 'youtube';
@@ -131,117 +131,117 @@ export default function CourseDetail() {
         </div>
 
         <div style={{ padding: 32 }}>
-        {editMode ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <LabelInput label="Title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
-            <LabelInput label="Tags (comma-separated)" value={editTags} onChange={(e) => setEditTags(e.target.value)} />
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-primary" onClick={saveEdit}>Save changes</button>
-              <button className="btn-ghost" onClick={() => setEditMode(false)}>Cancel</button>
-            </div>
-          </div>
-        ) : (
-          <div>
-            {/* Top row: badge + links */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <CourseBadge source={course.source} />
-              {course.playlistUrl && (
-                <a href={course.playlistUrl} target="_blank" rel="noopener noreferrer"
-                  className="label-caps" style={{ color: '#003365', textDecoration: 'none', borderBottom: '2px solid #003365', paddingBottom: 1 }}>
-                  View playlist ↗
-                </a>
-              )}
-            </div>
-
-            <h1 style={{
-              fontFamily: "'Space Grotesk', sans-serif",
-              fontSize: 36, fontWeight: 700, color: '#181f21',
-              margin: '0 0 12px', letterSpacing: '-0.02em', lineHeight: 1.1,
-            }}>
-              {course.title}
-            </h1>
-
-            {/* Enhanced metadata row with icons */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#181f21' }}>video_library</span>
-                <span className="label-caps">Total Videos: {stats.totalVideos}</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#181f21' }}>schedule</span>
-                <span className="label-caps">Duration: {fmt(course.totalDuration)}</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#747879' }}>calendar_today</span>
-                <span className="label-caps">Created: {fmtDate(course.createdAt)}</span>
+          {editMode ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <LabelInput label="Title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+              <LabelInput label="Tags (comma-separated)" value={editTags} onChange={(e) => setEditTags(e.target.value)} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-primary" onClick={saveEdit}>Save changes</button>
+                <button className="btn-ghost" onClick={() => setEditMode(false)}>Cancel</button>
               </div>
             </div>
-
-            {/* Tags */}
-            <div style={{ marginTop: 4 }}>
-              <TagEditor
-                tags={course.tags || []}
-                onUpdate={async (newTags) => {
-                  try {
-                    await coursesAPI.update(id, { tags: newTags });
-                    setData((prev) => ({
-                      ...prev,
-                      course: { ...prev.course, tags: newTags },
-                    }));
-                    toast('Tags updated ✓');
-                  } catch (e) { toast(e.message, 'error'); }
-                }}
-              />
-            </div>
-
-            {/* Overall progress */}
-            <div style={{ marginTop: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span className="label-caps" style={{ color: '#747879' }}>Progress</span>
-                <span className="label-caps" style={{ color: '#181f21' }}>{stats.completionPercentage}%</span>
+          ) : (
+            <div>
+              {/* Top row: badge + links */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <CourseBadge source={course.source} />
+                {course.playlistUrl && (
+                  <a href={course.playlistUrl} target="_blank" rel="noopener noreferrer"
+                    className="label-caps" style={{ color: '#003365', textDecoration: 'none', borderBottom: '2px solid #003365', paddingBottom: 1 }}>
+                    View playlist ↗
+                  </a>
+                )}
               </div>
-              <ProgressBar value={stats.completionPercentage} color={stats.completionPercentage === 100 ? '#536348' : '#536348'} height={8} />
-            </div>
 
-            {/* Action Buttons — Stitch-accurate, bottom of hero */}
-            <div style={{ display: 'flex', gap: 16, marginTop: 24 }}>
-              <button
-                onClick={() => setEditMode(true)}
-                style={{
-                  background: '#fbfaee', color: '#181f21',
-                  border: '4px solid #181f21', padding: '12px 24px',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  fontSize: 16, fontWeight: 600, cursor: 'pointer',
-                  boxShadow: '4px 4px 0px 0px #181f21',
-                  transition: 'all 0.15s',
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#d0e3c1'}
-                onMouseLeave={(e) => e.currentTarget.style.background = '#fbfaee'}
-                onMouseDown={(e) => { e.currentTarget.style.transform = 'translate(4px, 4px)'; e.currentTarget.style.boxShadow = 'none'; }}
-                onMouseUp={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '4px 4px 0px 0px #181f21'; }}
-              >
-                Edit Course
-              </button>
-              <button
-                onClick={deleteCourse}
-                style={{
-                  background: '#ba1a1a', color: '#ffffff',
-                  border: '4px solid #181f21', padding: '12px 24px',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  fontSize: 16, fontWeight: 600, cursor: 'pointer',
-                  boxShadow: '4px 4px 0px 0px #181f21',
-                  transition: 'all 0.15s',
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                onMouseDown={(e) => { e.currentTarget.style.transform = 'translate(4px, 4px)'; e.currentTarget.style.boxShadow = 'none'; }}
-                onMouseUp={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '4px 4px 0px 0px #181f21'; }}
-              >
-                Delete Course
-              </button>
+              <h1 style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontSize: 36, fontWeight: 700, color: '#181f21',
+                margin: '0 0 12px', letterSpacing: '-0.02em', lineHeight: 1.1,
+              }}>
+                {course.title}
+              </h1>
+
+              {/* Enhanced metadata row with icons */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#181f21' }}>video_library</span>
+                  <span className="label-caps">Total Videos: {stats.totalVideos}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#181f21' }}>schedule</span>
+                  <span className="label-caps">Duration: {fmt(course.totalDuration)}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#747879' }}>calendar_today</span>
+                  <span className="label-caps">Created: {fmtDate(course.createdAt)}</span>
+                </div>
+              </div>
+
+              {/* Tags */}
+              <div style={{ marginTop: 4 }}>
+                <TagEditor
+                  tags={course.tags || []}
+                  onUpdate={async (newTags) => {
+                    try {
+                      await coursesAPI.update(id, { tags: newTags });
+                      setData((prev) => ({
+                        ...prev,
+                        course: { ...prev.course, tags: newTags },
+                      }));
+                      toast('Tags updated ✓');
+                    } catch (e) { toast(e.message, 'error'); }
+                  }}
+                />
+              </div>
+
+              {/* Overall progress */}
+              <div style={{ marginTop: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span className="label-caps" style={{ color: '#747879' }}>Progress</span>
+                  <span className="label-caps" style={{ color: '#181f21' }}>{stats.completionPercentage}%</span>
+                </div>
+                <ProgressBar value={stats.completionPercentage} color={stats.completionPercentage === 100 ? '#536348' : '#536348'} height={8} />
+              </div>
+
+              {/* Action Buttons — Stitch-accurate, bottom of hero */}
+              <div style={{ display: 'flex', gap: 16, marginTop: 24 }}>
+                <button
+                  onClick={() => setEditMode(true)}
+                  style={{
+                    background: '#fbfaee', color: '#181f21',
+                    border: '4px solid #181f21', padding: '12px 24px',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontSize: 16, fontWeight: 600, cursor: 'pointer',
+                    boxShadow: '4px 4px 0px 0px #181f21',
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#d0e3c1'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#fbfaee'}
+                  onMouseDown={(e) => { e.currentTarget.style.transform = 'translate(4px, 4px)'; e.currentTarget.style.boxShadow = 'none'; }}
+                  onMouseUp={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '4px 4px 0px 0px #181f21'; }}
+                >
+                  Edit Course
+                </button>
+                <button
+                  onClick={deleteCourse}
+                  style={{
+                    background: '#ba1a1a', color: '#ffffff',
+                    border: '4px solid #181f21', padding: '12px 24px',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontSize: 16, fontWeight: 600, cursor: 'pointer',
+                    boxShadow: '4px 4px 0px 0px #181f21',
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                  onMouseDown={(e) => { e.currentTarget.style.transform = 'translate(4px, 4px)'; e.currentTarget.style.boxShadow = 'none'; }}
+                  onMouseUp={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '4px 4px 0px 0px #181f21'; }}
+                >
+                  Delete Course
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
         </div>
       </div>
 
@@ -261,7 +261,7 @@ export default function CourseDetail() {
             color: '#3c4b32', letterSpacing: '-0.02em',
           }}>{fmt(stats.totalWatchTime)}</span>
         </div>
-        
+
       </div>
 
       {showAddVideo && (

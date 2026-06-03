@@ -8,22 +8,22 @@ import { useToast } from '../hooks/useToast';
 export default function VideoPlayer() {
   const { courseId, videoId } = useParams();
   const navigate = useNavigate();
-  const toast    = useToast();
+  const toast = useToast();
 
   // Data
-  const [course, setCourse]   = useState(null);
-  const [videos, setVideos]   = useState([]);
-  const [curVid, setCurVid]   = useState(null);
+  const [course, setCourse] = useState(null);
+  const [videos, setVideos] = useState([]);
+  const [curVid, setCurVid] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Progress tracking
-  const [watched, setWatched]   = useState(0);
-  const [playing, setPlaying]   = useState(false);
-  const startRef  = useRef(null);
-  const timerRef  = useRef(null);
+  const [watched, setWatched] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const startRef = useRef(null);
+  const timerRef = useRef(null);
 
   // Notes
-  const [note, setNote]         = useState('');
+  const [note, setNote] = useState('');
   const [noteSaved, setNoteSaved] = useState(true);
   const noteTimer = useRef(null);
 
@@ -92,7 +92,7 @@ export default function VideoPlayer() {
         toast('Video complete! ✓', 'success');
         setCurVid((c) => c ? { ...c, progress: { ...c.progress, completed: true } } : c);
       }
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
@@ -100,8 +100,8 @@ export default function VideoPlayer() {
       startRef.current = Date.now();
       timerRef.current = setInterval(async () => {
         const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
-        const total   = watched + elapsed;
-        try { await progressAPI.update(curVid.videoId, total); } catch {}
+        const total = watched + elapsed;
+        try { await progressAPI.update(curVid.videoId, total); } catch { }
       }, 15000);
     } else {
       clearInterval(timerRef.current);
@@ -133,7 +133,7 @@ export default function VideoPlayer() {
       try {
         await notesAPI.save(curVid.videoId, val);
         setNoteSaved(true);
-      } catch {}
+      } catch { }
     }, 1200);
   };
 
@@ -169,10 +169,10 @@ export default function VideoPlayer() {
   /* ── Render ───────────────────────────────────────────────────────── */
   if (loading || !curVid) return <Spinner pad={100} />;
 
-  const idx  = videos.findIndex((v) => v.videoId === curVid.videoId);
+  const idx = videos.findIndex((v) => v.videoId === curVid.videoId);
   const prev = idx > 0 ? videos[idx - 1] : null;
   const next = idx < videos.length - 1 ? videos[idx + 1] : null;
-  const wp   = pct(watched, curVid.duration);
+  const wp = pct(watched, curVid.duration);
   const ytId = ytVideoId(curVid.videoUrl);
 
   return (
