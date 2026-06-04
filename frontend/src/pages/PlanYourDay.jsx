@@ -53,7 +53,7 @@ export default function PlanYourDay() {
       }
       const hist = JSON.parse(localStorage.getItem('learnr_goal_history') || '[]');
       setHistory(hist);
-    } catch {}
+    } catch (_) {}
     setLoading(false);
   }, []);
 

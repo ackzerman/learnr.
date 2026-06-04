@@ -61,7 +61,9 @@ const updateProgress = async (req, res, next) => {
     // This prevents double-counting when the client sends the same position twice.
 
     const previousSeconds = progress.watchedSeconds;
-    const newWatchedSeconds = Math.max(previousSeconds, watchedSeconds);
+    // Clamp to video duration — prevents clients from inflating stats
+    const clampedWatched = Math.min(watchedSeconds, video.duration);
+    const newWatchedSeconds = Math.max(previousSeconds, clampedWatched);
     const deltaSeconds = newWatchedSeconds - previousSeconds; // 0 if no new progress
 
     // ── 5. Update progress fields ─────────────────────────────────────────────
@@ -70,7 +72,7 @@ const updateProgress = async (req, res, next) => {
     progress.lastWatchedAt  = new Date();
 
     // Mark complete when >= 90% of the video has been watched
-    const completionThreshold = video.duration * 0.9;
+    const completionThreshold = video.duration * 0.99;
     const justCompleted =
       !progress.completed && progress.watchedSeconds >= completionThreshold;
 

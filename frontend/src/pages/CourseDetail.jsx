@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { coursesAPI, progressAPI } from '../api';
-import { fmt, pct, fmtDate, parseTags, ytThumb } from '../utils';
+import { fmt, pct, fmtDate, parseTags, ytThumb, ytVideoId } from '../utils';
 import {
   Spinner, ErrBox, ProgressBar, Modal, LabelInput,
   CourseBadge, VideoCircle, EmptyState, TagEditor,
@@ -13,13 +13,15 @@ function AddVideoForm({ courseId, onDone }) {
   const [form, setForm] = useState({ title: '', duration: '', videoUrl: '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [fetching, setFetching] = useState(false);
   const toast = useToast();
   const F = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async (e) => {
     e.preventDefault(); setErr(''); setBusy(true);
     try {
-      await coursesAPI.addVideo(courseId, { title: form.title, duration: parseInt(form.duration), videoUrl: form.videoUrl });
+      const durationSec = Math.round(parseFloat(form.duration) * 60) || 0;
+      await coursesAPI.addVideo(courseId, { title: form.title, duration: durationSec, videoUrl: form.videoUrl });
       toast('Video added ✓');
       onDone();
     } catch (err) { setErr(err.message); }
@@ -29,8 +31,27 @@ function AddVideoForm({ courseId, onDone }) {
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <LabelInput label="Title" placeholder="Video title" value={form.title} onChange={F('title')} required />
-      <LabelInput label="Duration (seconds)" type="number" min="1" placeholder="e.g. 600 for 10 min" value={form.duration} onChange={F('duration')} required hint="Convert minutes × 60" />
-      <LabelInput label="Video URL (optional)" type="url" placeholder="https://..." value={form.videoUrl} onChange={F('videoUrl')} />
+      <div style={{ position: 'relative' }}>
+        <LabelInput label="Duration (minutes)" type="number" min="0" step="any" placeholder="e.g. 10.5 for 10 min 30 sec" value={form.duration} onChange={F('duration')} required hint="Duration in minutes" />
+        {fetching && <span style={{ position: 'absolute', right: 12, top: 38, fontSize: 14 }}>⏳</span>}
+      </div>
+      <LabelInput 
+        label="Video URL (optional)" type="url" placeholder="https://..." 
+        value={form.videoUrl} onChange={F('videoUrl')} 
+        onBlur={async (e) => {
+          const url = e.target.value;
+          if (!url) return;
+          const id = ytVideoId(url);
+          if (id && !form.duration) {
+            setFetching(true);
+            try {
+              const res = await coursesAPI.getYoutubeDuration(id);
+              if (res.duration) setForm((f) => ({ ...f, duration: (res.duration / 60).toFixed(1) }));
+            } catch (err) {}
+            finally { setFetching(false); }
+          }
+        }}
+      />
       <ErrBox msg={err} />
       <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Adding…' : 'ADD VIDEO'}</button>
     </form>

@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
   };
 
   const refreshUser = async () => {
-    try { const d = await authAPI.me(); setUser(d.user); } catch {}
+    try { const d = await authAPI.me(); setUser(d.user); } catch (_) {}
   };
 
   return (

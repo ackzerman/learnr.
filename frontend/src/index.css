@@ -460,19 +460,28 @@ textarea.input { resize: vertical; min-height: 130px; line-height: 1.65; }
 
 /* ─── Modal ──────────────────────────────────────────────────────────────── */
 .modal-overlay {
-  position: fixed; inset: 0; background: rgba(27,28,21,0.6);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 1000; padding: 20px; backdrop-filter: blur(4px);
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  margin: 0; padding: 0;
+  background: rgba(27,28,21,0.6);
+  z-index: 1000; backdrop-filter: blur(4px);
   animation: fadeIn 0.15s ease;
 }
 .modal-box {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1001;
   background: var(--bg3);
   border: var(--border-thick) solid var(--border);
   border-radius: 0;
   padding: 28px;
   width: 100%; max-width: 540px; max-height: 88vh; overflow-y: auto;
-  animation: fadeUp 0.2s ease;
+  animation: fadeUpCenter 0.2s ease forwards;
   box-shadow: var(--shadow-block-sage);
+}
+@keyframes fadeUpCenter {
+  0% { opacity: 0; transform: translate(-50%, -45%); }
+  100% { opacity: 1; transform: translate(-50%, -50%); }
 }
 .modal-box.wide { max-width: 680px; }
 

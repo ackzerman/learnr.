@@ -3,6 +3,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 
 const connectDB = require("./config/db");
 const healthRoute = require("./routes/healthRoute");
@@ -26,16 +27,28 @@ connectDB();
 
 // ─── Global Middleware ────────────────────────────────────────────────────────
 
-// Parse incoming JSON request bodies
-app.use(express.json());
+// Parse incoming JSON request bodies (limit payload size to prevent DoS)
+app.use(express.json({ limit: '1mb' }));
 
-// Enable Cross-Origin Resource Sharing
-app.use(cors());
+// Enable Cross-Origin Resource Sharing — restricted to frontend origin
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  credentials: true,
+}));
+
+// Rate limiter for auth endpoints — prevents brute-force and credential stuffing
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15-minute window
+  max: 20,                   // max 20 requests per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many attempts. Please try again later.' },
+});
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.use("/api/health", healthRoute);
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/courses", courseRoutes);   
 app.use("/api/progress", progressRoutes);  
 app.use("/api/dashboard", dashboardRoutes); 

@@ -20,8 +20,8 @@ export default function Login() {
       const d = await authAPI.login(form);
       login(d.token, d.user);
       navigate('/');
-    } catch (err) {
-      setErr(err.message);
+    } catch (e) {
+      setErr(e.message);
     } finally {
       setBusy(false);
     }

@@ -24,15 +24,16 @@ export const authAPI = {
 
 // ─── Courses ──────────────────────────────────────────────────────────────────
 export const coursesAPI = {
-  list:          (page = 1, limit = 12) => api.get(`/courses?page=${page}&limit=${limit}`),
-  getById:       (id)                   => api.get(`/courses/${id}`),
-  getDetails:    (id)                   => api.get(`/courses/${id}/details`),
-  createManual:  (body)                 => api.post('/courses/manual', body),
-  createYoutube: (body)                 => api.post('/courses/youtube', body),
-  update:        (id, body)             => api.patch(`/courses/${id}`, body),
-  delete:        (id)                   => api.delete(`/courses/${id}`),
-  addVideo:      (courseId, body)       => api.post(`/courses/${courseId}/videos`, body),
-  removeVideo:   (courseId, videoId)    => api.delete(`/courses/${courseId}/videos/${videoId}`),
+  list:               (page = 1, limit = 12) => api.get(`/courses?page=${page}&limit=${limit}`),
+  getById:            (id)                   => api.get(`/courses/${id}`),
+  getDetails:         (id)                   => api.get(`/courses/${id}/details`),
+  createManual:       (body)                 => api.post('/courses/manual', body),
+  createYoutube:      (body)                 => api.post('/courses/youtube', body),
+  update:             (id, body)             => api.patch(`/courses/${id}`, body),
+  delete:             (id)                   => api.delete(`/courses/${id}`),
+  addVideo:           (courseId, body)       => api.post(`/courses/${courseId}/videos`, body),
+  removeVideo:        (courseId, videoId)    => api.delete(`/courses/${courseId}/videos/${videoId}`),
+  getYoutubeDuration: (videoId)              => api.get(`/courses/youtube/duration/${videoId}`),
 };
 
 // ─── Progress ─────────────────────────────────────────────────────────────────

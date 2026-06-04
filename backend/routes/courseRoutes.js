@@ -11,6 +11,7 @@ const {
   removeVideo,
   importYoutubeCourse,
   getCourseDetails,
+  getYoutubeVideoDuration,
 } = require("../controllers/courseController");
 
 const { protect } = require("../middleware/authMiddleware");
@@ -32,6 +33,9 @@ router.get("/", getCourses);
 
 // @route  POST /api/courses/youtube  — Import a course from a YouTube playlist
 router.post("/youtube", importYoutubeCourse);
+
+// @route  GET  /api/courses/youtube/duration/:videoId — Get single video duration
+router.get("/youtube/duration/:videoId", getYoutubeVideoDuration);
 
 // @route  GET  /api/courses/:id/details — Full course detail with progress + notes
 router.get("/:id/details", getCourseDetails);

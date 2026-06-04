@@ -46,7 +46,8 @@ const createManualCourse = async (req, res, next) => {
       userId,
       title:        title.trim(),
       source:       "manual",
-      tags,
+      // Sanitize tags — trim, lowercase, limit length and count
+      tags: (Array.isArray(tags) ? tags : []).slice(0, 20).map(t => String(t).trim().toLowerCase().slice(0, 50)).filter(Boolean),
       totalVideos,
       totalDuration,
     });
@@ -252,7 +253,8 @@ const updateCourse = async (req, res, next) => {
       if (!Array.isArray(tags)) {
         return next(new AppError("Tags must be an array.", 400));
       }
-      course.tags = tags;
+      // Sanitize tags — trim, lowercase, limit length and count
+      course.tags = tags.slice(0, 20).map(t => String(t).trim().toLowerCase().slice(0, 50)).filter(Boolean);
     }
 
     await course.save();
@@ -482,7 +484,8 @@ const importYoutubeCourse = async (req, res, next) => {
       source:       "youtube",
       playlistUrl,
       thumbnailUrl: items[0]?.thumbnailUrl || null,
-      tags,
+      // Sanitize tags — trim, lowercase, limit length and count
+      tags: (Array.isArray(tags) ? tags : []).slice(0, 20).map(t => String(t).trim().toLowerCase().slice(0, 50)).filter(Boolean),
       totalVideos,
       totalDuration,
     });
@@ -585,6 +588,22 @@ const getCourseDetails = async (req, res, next) => {
   }
 };
 
+// ─── Fetch Single YouTube Video Duration ─────────────────────────────────────
+const getYoutubeVideoDuration = async (req, res, next) => {
+  try {
+    const { videoId } = req.params;
+    if (!videoId) return next(new AppError("Video ID is required", 400));
+    // Validate YouTube video ID format (11 alphanumeric + hyphen/underscore chars)
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+      return next(new AppError("Invalid YouTube video ID format.", 400));
+    }
+    const durationMap = await fetchVideoDurations([videoId]);
+    res.status(200).json({ duration: durationMap[videoId] || 0 });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createManualCourse,
   getCourses,
@@ -595,4 +614,5 @@ module.exports = {
   removeVideo,
   importYoutubeCourse,
   getCourseDetails,
+  getYoutubeVideoDuration,
 };

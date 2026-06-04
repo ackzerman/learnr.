@@ -20,8 +20,8 @@ export default function Register() {
       const d = await authAPI.register(form);
       login(d.token, d.user);
       navigate('/');
-    } catch (err) {
-      setErr(err.message);
+    } catch (e) {
+      setErr(e.message);
     } finally {
       setBusy(false);
     }

@@ -97,9 +97,11 @@ export function StatCard({ label, value, color = '#536348', sub }) {
   );
 }
 
+import ReactDOM from 'react-dom';
+
 /* ─── Modal — retro with sage block shadow ─────────────────────────────────── */
 export function Modal({ title, onClose, children, wide = false }) {
-  return (
+  return ReactDOM.createPortal(
     <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={`modal-box${wide ? ' wide' : ''}`}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
@@ -111,7 +113,8 @@ export function Modal({ title, onClose, children, wide = false }) {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

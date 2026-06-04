@@ -22,7 +22,7 @@ export const ytVideoId = (url) => {
   try {
     const u = new URL(url);
     return u.searchParams.get('v') || u.pathname.split('/').pop();
-  } catch {
+  } catch (_) {
     return null;
   }
 };

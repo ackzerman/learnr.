@@ -14,13 +14,22 @@ export default function VideoPlayer() {
   const [course, setCourse] = useState(null);
   const [videos, setVideos] = useState([]);
   const [curVid, setCurVid] = useState(null);
+  const curVidRef = useRef(null);
+  useEffect(() => { curVidRef.current = curVid; }, [curVid]);
   const [loading, setLoading] = useState(true);
+  const ytId = curVid ? ytVideoId(curVid.videoUrl) : null;
 
   // Progress tracking
   const [watched, setWatched] = useState(0);
+  const watchedRef = useRef(0);
+  useEffect(() => { watchedRef.current = watched; }, [watched]);
+
   const [playing, setPlaying] = useState(false);
   const startRef = useRef(null);
   const timerRef = useRef(null);
+  const ytPlayerRef = useRef(null);
+  const videoRef = useRef(null);
+  const lastSyncRef = useRef(Date.now());
 
   // Notes
   const [note, setNote] = useState('');
@@ -52,7 +61,7 @@ export default function VideoPlayer() {
   useEffect(() => {
     loadAll();
     return () => { clearInterval(timerRef.current); clearTimeout(noteTimer.current); };
-  }, []);
+  }, [loadAll]);
 
   /* ── Switch video ─────────────────────────────────────────────────── */
   const switchTo = async (vid) => {
@@ -67,48 +76,128 @@ export default function VideoPlayer() {
       const nd = await notesAPI.get(vid.videoId);
       setNote(nd.note?.content || '');
       setNoteSaved(true);
-    } catch { setNote(''); }
+    } catch (_) { setNote(''); }
     // Update URL without remounting
     window.history.replaceState({}, '', `/courses/${courseId}/watch/${vid.videoId}`);
   };
 
   /* ── Progress timer ───────────────────────────────────────────────── */
-  const flushProgress = async () => {
-    if (!startRef.current || !curVid) return;
-    const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
-    if (elapsed <= 0) return;
-    const total = watched + elapsed;
-    startRef.current = null;
-    setWatched(total);
+  const flushProgress = useCallback(async () => {
+    const vid = curVidRef.current;
+    if (!vid) return;
+    const total = Math.floor(watchedRef.current);
+    if (total <= 0) return;
     try {
-      const d = await progressAPI.update(curVid.videoId, total);
+      const d = await progressAPI.update(vid.videoId, total);
       // Refresh completion state on sidebar
       setVideos((prev) => prev.map((v) =>
-        v.videoId === curVid.videoId
+        v.videoId === vid.videoId
           ? { ...v, progress: { ...v.progress, watchedSeconds: total, completed: d.completed } }
           : v
       ));
-      if (d.completed && !curVid.progress.completed) {
+      if (d.completed && !vid.progress.completed) {
         toast('Video complete! ✓', 'success');
         setCurVid((c) => c ? { ...c, progress: { ...c.progress, completed: true } } : c);
       }
-    } catch { }
-  };
+    } catch (_) { }
+  }, [toast]);
 
   useEffect(() => {
     if (playing) {
       startRef.current = Date.now();
+      lastSyncRef.current = Date.now();
+
       timerRef.current = setInterval(async () => {
-        const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
-        const total = watched + elapsed;
-        try { await progressAPI.update(curVid.videoId, total); } catch { }
-      }, 15000);
+        let currentT = 0;
+        
+        // If YouTube, pull accurate time instead of wall-clock time
+        if (ytPlayerRef.current && ytPlayerRef.current.getCurrentTime) {
+          currentT = ytPlayerRef.current.getCurrentTime();
+        } 
+        // If native video, pull current time
+        else if (videoRef.current) {
+          currentT = videoRef.current.currentTime;
+        } 
+        // Fallback
+        else {
+          const elapsed = (Date.now() - startRef.current) / 1000;
+          currentT = watchedRef.current + elapsed;
+          startRef.current = Date.now(); // Add small chunks
+        }
+
+        if (currentT > watchedRef.current) {
+          setWatched(currentT);
+        }
+
+        // Sync to backend every 15 seconds
+        if (Date.now() - lastSyncRef.current >= 15000) {
+          lastSyncRef.current = Date.now();
+          const vid = curVidRef.current;
+          if (vid) {
+            const total = Math.floor(currentT);
+            try { 
+              const d = await progressAPI.update(vid.videoId, total); 
+              if (d.completed && !vid.progress.completed) {
+                setCurVid((c) => c ? { ...c, progress: { ...c.progress, completed: true } } : c);
+              }
+            } catch (_) { }
+          }
+        }
+      }, 100);
     } else {
       clearInterval(timerRef.current);
       flushProgress();
     }
     return () => clearInterval(timerRef.current);
-  }, [playing]);
+  }, [playing, flushProgress]);
+
+  // YouTube IFrame Initialization
+  useEffect(() => {
+    if (!ytId) return;
+
+    let initAttempts = 0;
+    const initPlayer = () => {
+      if (ytPlayerRef.current) ytPlayerRef.current.destroy();
+      
+      const container = document.getElementById(`yt-player-${ytId}`);
+      if (!container) {
+        if (initAttempts < 10) {
+          initAttempts++;
+          setTimeout(initPlayer, 100);
+        }
+        return;
+      }
+      
+      ytPlayerRef.current = new window.YT.Player(`yt-player-${ytId}`, {
+        videoId: ytId,
+        playerVars: { rel: 0, modestbranding: 1, enablejsapi: 1 },
+        events: {
+          onStateChange: (event) => {
+            if (event.data === window.YT.PlayerState.PLAYING) setPlaying(true);
+            else setPlaying(false);
+          }
+        }
+      });
+    };
+
+    if (!window.YT) {
+      const tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+      window.onYouTubeIframeAPIReady = initPlayer;
+    } else {
+      initPlayer();
+    }
+
+    return () => {
+      if (ytPlayerRef.current) {
+        ytPlayerRef.current.destroy();
+        ytPlayerRef.current = null;
+      }
+      setPlaying(false);
+    };
+  }, [ytId]);
 
   /* ── Mark complete ────────────────────────────────────────────────── */
   const markComplete = async () => {
@@ -133,7 +222,7 @@ export default function VideoPlayer() {
       try {
         await notesAPI.save(curVid.videoId, val);
         setNoteSaved(true);
-      } catch { }
+      } catch (_) { }
     }, 1200);
   };
 
@@ -173,7 +262,6 @@ export default function VideoPlayer() {
   const prev = idx > 0 ? videos[idx - 1] : null;
   const next = idx < videos.length - 1 ? videos[idx + 1] : null;
   const wp = pct(watched, curVid.duration);
-  const ytId = ytVideoId(curVid.videoUrl);
 
   return (
     <div className="fade-up" style={{
@@ -190,15 +278,10 @@ export default function VideoPlayer() {
         <div style={{ background: '#181f21', borderRadius: 0, overflow: 'hidden', marginBottom: 16, border: '4px solid #181f21' }}>
           {ytId ? (
             <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
-              <iframe
-                src={`https://www.youtube.com/embed/${ytId}?rel=0&modestbranding=1`}
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
-                allowFullScreen
-                title={curVid.title}
-              />
+              <div id={`yt-player-${ytId}`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }} />
             </div>
           ) : curVid.videoUrl ? (
-            <video controls style={{ width: '100%', display: 'block', maxHeight: 480 }} src={curVid.videoUrl} />
+            <video ref={videoRef} controls style={{ width: '100%', display: 'block', maxHeight: 480 }} src={curVid.videoUrl} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
           ) : (
             <div style={{ padding: '80px 20px', textAlign: 'center' }}>
               <p style={{ fontSize: 48, margin: '0 0 12px' }}>🎬</p>

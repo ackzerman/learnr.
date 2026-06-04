@@ -35,7 +35,7 @@ export default function Dashboard() {
       if (saved.date === today) {
         setTodayGoal({ dailyGoal: saved.dailyGoal || '', tasks: saved.tasks || [] });
       }
-    } catch {}
+    } catch (_) {}
   }, []);
 
   if (loading) return <Spinner pad={100} />;

@@ -119,7 +119,7 @@ function ManualForm({ onDone }) {
         tags: parseTags(tags),
         videos: videos.map((v) => ({
           title:    v.title,
-          duration: parseInt(v.duration) || 0,
+          duration: Math.round(parseFloat(v.duration) * 60) || 0,
           videoUrl: v.videoUrl || '',
         })),
       });
@@ -148,11 +148,14 @@ function ManualForm({ onDone }) {
                   className="input" style={{ flex: 3 }} placeholder={`Video ${i + 1} title`}
                   value={v.title} onChange={(e) => updV(i, 'title', e.target.value)} required
                 />
-                <input
-                  className="input" style={{ flex: 1 }} placeholder="Sec" type="number" min="1"
-                  value={v.duration} onChange={(e) => updV(i, 'duration', e.target.value)} required
-                  title="Duration in seconds"
-                />
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <input
+                    className="input" style={{ width: '100%' }} placeholder="Min" type="number" min="0" step="any"
+                    value={v.duration} onChange={(e) => updV(i, 'duration', e.target.value)} required
+                    title="Duration in minutes"
+                  />
+                  {v.fetching && <span style={{ position: 'absolute', right: 8, top: 12, fontSize: 12 }}>⏳</span>}
+                </div>
                 {videos.length > 1 && (
                   <button type="button" className="btn-danger" style={{ padding: '8px 11px', flexShrink: 0 }} onClick={() => removeV(i)}>✕</button>
                 )}
@@ -160,11 +163,24 @@ function ManualForm({ onDone }) {
               <input
                 className="input" placeholder="Video URL (optional)"
                 value={v.videoUrl} onChange={(e) => updV(i, 'videoUrl', e.target.value)}
+                onBlur={async (e) => {
+                  const url = e.target.value;
+                  if (!url) return;
+                  const id = ytVideoId(url);
+                  if (id && (!v.duration || v.duration === '')) {
+                    updV(i, 'fetching', true);
+                    try {
+                      const res = await coursesAPI.getYoutubeDuration(id);
+                      if (res.duration) updV(i, 'duration', (res.duration / 60).toFixed(1));
+                    } catch (err) {}
+                    finally { updV(i, 'fetching', false); }
+                  }
+                }}
               />
             </div>
           ))}
         </div>
-        <p style={{ fontSize: 12, color: '#747879', marginTop: 6, fontFamily: "'Space Mono', monospace" }}>Duration in seconds — e.g. 600 = 10 minutes</p>
+        <p style={{ fontSize: 12, color: '#747879', marginTop: 6, fontFamily: "'Space Mono', monospace" }}>Duration in minutes — e.g. 10.5 = 10 min 30 sec</p>
       </div>
 
       <ErrBox msg={err} />
