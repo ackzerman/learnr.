@@ -39,7 +39,7 @@ export default function Login() {
             fontFamily: "'Space Grotesk', sans-serif",
             fontSize: 48, fontWeight: 700, color: '#181f21',
             letterSpacing: '-0.02em', lineHeight: 1,
-          }}>Learnr</div>
+          }}>learnr.</div>
           <p style={{
             fontFamily: "'Public Sans', sans-serif",
             color: '#747879', fontSize: 16, marginTop: 12,

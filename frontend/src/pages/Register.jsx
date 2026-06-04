@@ -38,7 +38,7 @@ export default function Register() {
             fontFamily: "'Space Grotesk', sans-serif",
             fontSize: 48, fontWeight: 700, color: '#181f21',
             letterSpacing: '-0.02em', lineHeight: 1,
-          }}>Learnr</div>
+          }}>learnr.</div>
           <p style={{
             fontFamily: "'Public Sans', sans-serif",
             color: '#747879', fontSize: 16, marginTop: 12,
@@ -66,7 +66,7 @@ export default function Register() {
               required
               minLength={6}
               autoComplete="new-password"
-              hint="At least 6 characters"
+              
             />
             <ErrBox msg={err} />
             <button type="submit" className="btn-primary" disabled={busy} style={{ width: '100%', padding: 14, fontSize: 16 }}>

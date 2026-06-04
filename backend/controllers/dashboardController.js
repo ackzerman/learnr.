@@ -244,10 +244,8 @@ const _getContinueWatching = async (userObjId) => {
  */
 const _getRecentCourses = async (userObjId) => {
   return Course.aggregate([
-    // Stage 1 — only this user's courses, newest first
+    // Stage 1 — only this user's courses
     { $match: { userId: userObjId } },
-    { $sort:  { createdAt: -1 } },
-    { $limit: 5 },
 
     // Stage 2 — pull in videos for each course
     {
@@ -259,11 +257,10 @@ const _getRecentCourses = async (userObjId) => {
       },
     },
 
-    // Stage 3 — pull in completed progress records for this user
-    // that belong to the videos in this course
+    // Stage 3 — pull in ALL progress records for this user for these videos
     {
       $lookup: {
-        from: "progresses",  // Mongoose pluralises "Progress" → "progresses"
+        from: "progresses",
         let:  { videoIds: "$videos._id" },
         pipeline: [
           {
@@ -272,17 +269,57 @@ const _getRecentCourses = async (userObjId) => {
                 $and: [
                   { $in:  ["$videoId",  "$$videoIds"] },
                   { $eq:  ["$userId",   userObjId]    },
-                  { $eq:  ["$completed", true]         },
                 ],
               },
             },
           },
         ],
-        as: "completedProgress",
+        as: "progressRecords",
       },
     },
 
-    // Stage 4 — shape the final output
+    // Stage 4 — Calculate the most recent activity (max lastWatchedAt) and completed count
+    {
+      $addFields: {
+        lastActivityAt: {
+          $max: {
+            $concatArrays: [
+              // All valid lastWatchedAt dates from progress
+              {
+                $filter: {
+                  input: {
+                    $map: {
+                      input: "$progressRecords",
+                      as: "pr",
+                      in: "$$pr.lastWatchedAt",
+                    },
+                  },
+                  as: "date",
+                  cond: { $ne: ["$$date", null] },
+                }
+              },
+              // Fallback to course creation date so unwatched courses still appear
+              ["$createdAt"]
+            ]
+          }
+        },
+        completedVideos: {
+          $size: {
+            $filter: {
+              input: "$progressRecords",
+              as: "pr",
+              cond: { $eq: ["$$pr.completed", true] }
+            }
+          }
+        }
+      }
+    },
+
+    // Stage 5 — sort by most recent activity and limit to 5
+    { $sort: { lastActivityAt: -1 } },
+    { $limit: 5 },
+
+    // Stage 6 — shape the final output
     {
       $project: {
         _id:             0,
@@ -293,8 +330,9 @@ const _getRecentCourses = async (userObjId) => {
         thumbnailUrl:    1,
         firstVideoUrl:   { $arrayElemAt: ["$videos.videoUrl", 0] },
         totalVideos:     { $size: "$videos" },
-        completedVideos: { $size: "$completedProgress" },
+        completedVideos: 1,
         createdAt:       1,
+        lastActivityAt:  1,
       },
     },
   ]);

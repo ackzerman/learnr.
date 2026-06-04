@@ -66,7 +66,7 @@ function YouTubeForm({ onDone }) {
     e.preventDefault(); setErr(''); setBusy(true);
     try {
       await coursesAPI.createYoutube({ playlistUrl: url, tags: parseTags(tags) });
-      toast('Course imported! ✓');
+      toast('Course imported!');
       onDone();
     } catch (err) { setErr(err.message); }
     finally { setBusy(false); }
@@ -84,7 +84,7 @@ function YouTubeForm({ onDone }) {
         hint="We'll automatically fetch all videos, titles, and durations."
       />
       <LabelInput
-        label="Tags (optional, comma-separated)"
+        label="Tags"
         placeholder="math, calculus, beginner"
         value={tags}
         onChange={(e) => setTags(e.target.value)}
@@ -123,7 +123,7 @@ function ManualForm({ onDone }) {
           videoUrl: v.videoUrl || '',
         })),
       });
-      toast('Course created! ✓');
+      toast('Course created!');
       onDone();
     } catch (err) { setErr(err.message); }
     finally { setBusy(false); }
@@ -132,7 +132,7 @@ function ManualForm({ onDone }) {
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <LabelInput label="Course Title" placeholder="e.g. Linear Algebra Fundamentals" value={title} onChange={(e) => setTitle(e.target.value)} required />
-      <LabelInput label="Tags (comma-separated)" placeholder="math, algebra, intermediate" value={tags} onChange={(e) => setTags(e.target.value)} />
+      <LabelInput label="Tags" placeholder="math, algebra, intermediate" value={tags} onChange={(e) => setTags(e.target.value)} />
 
       {/* Video list */}
       <div>
@@ -150,9 +150,9 @@ function ManualForm({ onDone }) {
                 />
                 <div style={{ flex: 1, position: 'relative' }}>
                   <input
-                    className="input" style={{ width: '100%' }} placeholder="Min" type="number" min="0" step="any"
+                    className="input" style={{ width: '100%' }} placeholder="Duration" type="number" min="0" step="any"
                     value={v.duration} onChange={(e) => updV(i, 'duration', e.target.value)} required
-                    title="Duration in minutes"
+                    title="in minutes"
                   />
                   {v.fetching && <span style={{ position: 'absolute', right: 8, top: 12, fontSize: 12 }}>⏳</span>}
                 </div>

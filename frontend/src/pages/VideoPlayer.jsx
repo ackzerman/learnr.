@@ -170,7 +170,12 @@ export default function VideoPlayer() {
       
       ytPlayerRef.current = new window.YT.Player(`yt-player-${ytId}`, {
         videoId: ytId,
-        playerVars: { rel: 0, modestbranding: 1, enablejsapi: 1 },
+        playerVars: { 
+          rel: 0, 
+          modestbranding: 1, 
+          enablejsapi: 1,
+          start: Math.floor(watchedRef.current)
+        },
         events: {
           onStateChange: (event) => {
             if (event.data === window.YT.PlayerState.PLAYING) setPlaying(true);
@@ -281,7 +286,16 @@ export default function VideoPlayer() {
               <div id={`yt-player-${ytId}`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }} />
             </div>
           ) : curVid.videoUrl ? (
-            <video ref={videoRef} controls style={{ width: '100%', display: 'block', maxHeight: 480 }} src={curVid.videoUrl} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
+            <video 
+              ref={videoRef} 
+              controls 
+              style={{ width: '100%', display: 'block', maxHeight: 480 }} 
+              src={curVid.videoUrl} 
+              onLoadedMetadata={(e) => { e.target.currentTime = watchedRef.current; }}
+              onPlay={() => setPlaying(true)} 
+              onPause={() => setPlaying(false)} 
+              onEnded={() => setPlaying(false)} 
+            />
           ) : (
             <div style={{ padding: '80px 20px', textAlign: 'center' }}>
               <p style={{ fontSize: 48, margin: '0 0 12px' }}>🎬</p>
