@@ -12,6 +12,9 @@ const {
   importYoutubeCourse,
   getCourseDetails,
   getYoutubeVideoDuration,
+  reorderVideos,
+  updateVideo,
+  searchVideos,
 } = require("../controllers/courseController");
 
 const { protect } = require("../middleware/authMiddleware");
@@ -40,6 +43,9 @@ router.get("/youtube/duration/:videoId", getYoutubeVideoDuration);
 // @route  GET  /api/courses/:id/details — Full course detail with progress + notes
 router.get("/:id/details", getCourseDetails);
 
+// @route  GET  /api/courses/search/videos — Search videos in user's courses
+router.get("/search/videos", searchVideos);
+
 // @route  GET  /api/courses/:id     — Get a single course with its videos
 router.get("/:id", getCourseById);
 
@@ -54,6 +60,12 @@ router.delete("/:id", deleteCourse);
 // @route  POST   /api/courses/:id/videos            — Add a video
 router.post("/:id/videos", addVideo);
  
+// @route  PATCH  /api/courses/:id/videos/reorder    — Reorder videos
+router.patch("/:id/videos/reorder", reorderVideos);
+
+// @route  PATCH  /api/courses/:id/videos/:videoId   — Update a video (title, duration)
+router.patch("/:id/videos/:videoId", updateVideo);
+
 // @route  DELETE /api/courses/:id/videos/:videoId   — Remove a video
 router.delete("/:id/videos/:videoId", removeVideo);
 

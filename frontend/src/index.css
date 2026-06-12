@@ -60,7 +60,7 @@ body {
   /* Elevation */
   --shadow-block: 4px 4px 0px 0px #181f21;
   --shadow-block-hover: 5px 5px 0px 0px #181f21;
-  --shadow-block-sage: 8px 8px 0px 0px #a8ba9a;
+  --shadow-block-lg: 8px 8px 0px 0px #181f21;
 }
 
 /* ─── Animations ─────────────────────────────────────────────────────────── */
@@ -477,7 +477,7 @@ textarea.input { resize: vertical; min-height: 130px; line-height: 1.65; }
   padding: 28px;
   width: 100%; max-width: 540px; max-height: 88vh; overflow-y: auto;
   animation: fadeUpCenter 0.2s ease forwards;
-  box-shadow: var(--shadow-block-sage);
+  box-shadow: var(--shadow-block-lg);
 }
 @keyframes fadeUpCenter {
   0% { opacity: 0; transform: translate(-50%, -45%); }

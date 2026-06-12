@@ -32,8 +32,11 @@ export const coursesAPI = {
   update:             (id, body)             => api.patch(`/courses/${id}`, body),
   delete:             (id)                   => api.delete(`/courses/${id}`),
   addVideo:           (courseId, body)       => api.post(`/courses/${courseId}/videos`, body),
+  updateVideo:        (courseId, videoId, body) => api.patch(`/courses/${courseId}/videos/${videoId}`, body),
   removeVideo:        (courseId, videoId)    => api.delete(`/courses/${courseId}/videos/${videoId}`),
+  reorderVideos:      (courseId, videoIds)   => api.patch(`/courses/${courseId}/videos/reorder`, { videoIds }),
   getYoutubeDuration: (videoId)              => api.get(`/courses/youtube/duration/${videoId}`),
+  searchVideos:       (query)                => api.get(`/courses/search/videos?q=${encodeURIComponent(query)}`),
 };
 
 // ─── Progress ─────────────────────────────────────────────────────────────────
@@ -68,4 +71,9 @@ export const goalsAPI = {
   addTask:     (body)       => api.post('/goals/tasks', body),
   toggleTask:  (taskId)     => api.patch(`/goals/tasks/${taskId}`),
   deleteTask:  (taskId)     => api.delete(`/goals/tasks/${taskId}`),
+};
+
+// ─── Streak ───────────────────────────────────────────────────────────────────
+export const streakAPI = {
+  get:      (month)  => api.get(month ? `/streak?month=${month}` : '/streak'),
 };

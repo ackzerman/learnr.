@@ -13,6 +13,8 @@ const progressRoutes = require("./routes/progressRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes"); 
 const analyticsRoutes  = require("./routes/analyticsRoutes");   
 const notesRoutes  = require("./routes/notesRoutes");     // ← Notes: save + fetch per video 
+const goalRoutes   = require("./routes/goalRoutes");      // ← Goals: daily/weekly + tasks
+const streakRoutes = require("./routes/streakRoutes");    // ← Streak: calendar streak data
 const notFound = require("./middleware/notFound");
 const errorHandler = require("./middleware/errorHandler");
 
@@ -54,6 +56,8 @@ app.use("/api/progress", progressRoutes);
 app.use("/api/dashboard", dashboardRoutes); 
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/notes", notesRoutes);
+app.use("/api/goals", goalRoutes);
+app.use("/api/streak", streakRoutes);
 
 // Add future route modules here, e.g.:
 // app.use("/api/users",    require("./routes/userRoutes"));

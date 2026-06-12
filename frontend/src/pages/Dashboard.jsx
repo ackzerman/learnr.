@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { dashboardAPI } from '../api';
+import { dashboardAPI, goalsAPI, streakAPI } from '../api';
 import { pct, ytThumb } from '../utils';
 import { Spinner, ProgressBar, EmptyState } from '../components/UI';
 import { useAuth } from '../hooks/useAuth';
+import StreakCalendar from '../components/StreakCalendar';
 
 /** Format seconds → "MM:SS" or "H:MM:SS" clock style */
 const fmtClock = (s) => {
@@ -23,19 +24,23 @@ export default function Dashboard() {
   const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Today's Goal from Plan Your Day localStorage
-  const [todayGoal, setTodayGoal] = useState({ dailyGoal: '', tasks: [] });
+  // Today's Goal from DB
+  const [todayGoal, setTodayGoal] = useState(null);
+
+  // Streak data
+  const [streak, setStreak] = useState(null);
 
   useEffect(() => {
-    dashboardAPI.get().then(setData).catch(console.error).finally(() => setLoading(false));
-    // Load plan from localStorage
-    try {
-      const saved = JSON.parse(localStorage.getItem('learnr_plan') || '{}');
-      const today = new Date().toISOString().slice(0, 10);
-      if (saved.date === today) {
-        setTodayGoal({ dailyGoal: saved.dailyGoal || '', tasks: saved.tasks || [] });
-      }
-    } catch (_) {}
+    // Load all dashboard data in parallel
+    Promise.all([
+      dashboardAPI.get(),
+      goalsAPI.getToday(),
+      streakAPI.get(),
+    ]).then(([dashData, goalData, streakData]) => {
+      setData(dashData);
+      setTodayGoal(goalData.goal);
+      setStreak(streakData);
+    }).catch(console.error).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <Spinner pad={100} />;
@@ -44,10 +49,11 @@ export default function Dashboard() {
   const { continueWatching, recentCourses } = data;
   const displayCourses = recentCourses.slice(0, 10);
 
-  // Today's goal progress
-  const completedTasks = todayGoal.tasks.filter((t) => t.done).length;
-  const totalTasks = todayGoal.tasks.length;
-  const upNextTasks = todayGoal.tasks.filter((t) => !t.done).slice(0, 3);
+  // Today's goal progress (from DB)
+  const tasks = todayGoal?.tasks || [];
+  const completedTasks = tasks.filter((t) => t.done).length;
+  const totalTasks = tasks.length;
+  const nextTask = tasks.find((t) => !t.done);
 
   // Carousel scroll
   const scrollCarousel = (dir) => {
@@ -166,33 +172,40 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Right Column: Today's Goal */}
+        {/* Right Column: Compact Goal + Calendar Streak */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div style={{ height: 58 }} /> {/* Spacer to align with title height */}
 
-          <div className="pixel-card" style={{
-            background: '#e9e9dd', padding: 24,
-            display: 'flex', flexDirection: 'column', gap: 24, flex: 1,
-          }}>
+          {/* ── Compressed Today's Goal Card ──────────────────────────── */}
+          <div
+            className="pixel-card"
+            onClick={() => navigate('/plan')}
+            style={{
+              background: '#e9e9dd', padding: 20, cursor: 'pointer',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#deded2'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#e9e9dd'}
+          >
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h2 style={{
                 fontFamily: "'Space Grotesk', sans-serif",
-                fontSize: 24, fontWeight: 600, lineHeight: 1.3, color: '#181f21', margin: 0,
+                fontSize: 18, fontWeight: 700, lineHeight: 1.3, color: '#181f21', margin: 0,
               }}>Today's Goal</h2>
-              <span className="label-caps" style={{ color: '#536348' }}>
-                Completed {completedTasks}/{totalTasks} videos
+              <span className="label-caps" style={{ color: '#536348', fontSize: 10 }}>
+                {completedTasks}/{totalTasks} done
               </span>
             </div>
 
-            {/* Segmented progress bar */}
+            {/* Compact segmented progress bar */}
             <div style={{
-              height: 32, width: '100%', border: '2px solid #181f21',
-              background: '#ffffff', display: 'flex', padding: 4,
+              height: 20, width: '100%', border: '2px solid #181f21',
+              background: '#ffffff', display: 'flex', padding: 3, marginBottom: 12,
             }}>
               {totalTasks > 0 ? (
-                todayGoal.tasks.map((t, i) => (
-                  <div key={t.id} style={{
+                tasks.map((t, i) => (
+                  <div key={t._id} style={{
                     flex: 1, height: '100%',
                     background: t.done ? '#536348' : '#e9e9dd',
                     borderRight: i < totalTasks - 1 ? '2px solid #fbfaee' : 'none',
@@ -200,88 +213,59 @@ export default function Dashboard() {
                   }} />
                 ))
               ) : (
-                /* Empty state: 7 placeholder segments */
-                Array.from({ length: 7 }).map((_, i) => (
+                Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} style={{
                     flex: 1, height: '100%', background: '#e9e9dd',
-                    borderRight: i < 6 ? '2px solid #fbfaee' : 'none',
+                    borderRight: i < 4 ? '2px solid #fbfaee' : 'none',
                   }} />
                 ))
               )}
             </div>
 
-            {/* Up Next list */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <p className="label-caps" style={{ color: '#434749', margin: 0 }}>UP NEXT</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {upNextTasks.length > 0 ? upNextTasks.map((t, i) => (
-                  <div key={t.id} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: 12, background: '#ffffff', border: '2px solid #181f21',
-                    cursor: 'pointer', transition: 'background 0.15s',
-                  }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#d0e3c1'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = '#ffffff'}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <span className="label-caps" style={{ color: '#181f21', opacity: 0.5 }}>
-                        {String(completedTasks + i + 1).padStart(2, '0')}
-                      </span>
-                      <span style={{
-                        fontFamily: "'Public Sans', sans-serif",
-                        fontSize: 16, fontWeight: 700, color: '#181f21',
-                      }}>{t.text}</span>
-                    </div>
-                    <span className="material-symbols-outlined" style={{ color: '#181f21' }}>chevron_right</span>
-                  </div>
-                )) : (
-                  /* Placeholder items when no tasks set */
-                  [1, 2, 3].map((n) => (
-                    <div key={n} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: 12, background: '#ffffff', border: '2px solid #181f21',
-                      cursor: 'pointer', transition: 'background 0.15s', opacity: 0.5,
-                    }}
-                      onClick={() => navigate('/plan')}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#d0e3c1'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = '#ffffff'}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <span className="label-caps" style={{ color: '#181f21', opacity: 0.5 }}>
-                          {String(n).padStart(2, '0')}
-                        </span>
-                        <span style={{
-                          fontFamily: "'Public Sans', sans-serif",
-                          fontSize: 16, fontWeight: 700, color: '#181f21',
-                        }}>Set a task in Plan My Day</span>
-                      </div>
-                      <span className="material-symbols-outlined" style={{ color: '#181f21' }}>chevron_right</span>
-                    </div>
-                  ))
-                )}
+            {/* Single next task */}
+            {nextTask ? (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: 10, background: '#ffffff', border: '2px solid #181f21',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span className="label-caps" style={{ color: '#181f21', opacity: 0.4, fontSize: 10 }}>
+                    {String(completedTasks + 1).padStart(2, '0')}
+                  </span>
+                  <span style={{
+                    fontFamily: "'Public Sans', sans-serif",
+                    fontSize: 14, fontWeight: 700, color: '#181f21',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{nextTask.text}</span>
+                </div>
+                <span className="material-symbols-outlined" style={{ color: '#181f21', fontSize: 18 }}>chevron_right</span>
               </div>
-            </div>
-
-            {/* VIEW FULL PLAN button */}
-            <button
-              className="pixel-card"
-              onClick={() => navigate('/plan')}
-              style={{
-                marginTop: 'auto', width: '100%',
-                background: '#ffffff', border: '2px solid #181f21',
-                padding: '14px 24px', cursor: 'pointer',
-                fontFamily: "'Space Grotesk', sans-serif",
-                fontSize: 16, fontWeight: 600, color: '#181f21',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = '#d0e3c1'}
-              onMouseLeave={(e) => e.currentTarget.style.background = '#ffffff'}
-            >
-              VIEW FULL PLAN
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>calendar_month</span>
-            </button>
+            ) : totalTasks > 0 ? (
+              <div style={{
+                padding: 10, background: 'rgba(83,99,72,0.1)', border: '2px solid #536348',
+                textAlign: 'center',
+              }}>
+                <span style={{
+                  fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700,
+                  color: '#536348', letterSpacing: '0.1em', textTransform: 'uppercase',
+                }}>✓ All tasks completed!</span>
+              </div>
+            ) : (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: 10, background: '#ffffff', border: '2px solid #181f21', opacity: 0.5,
+              }}>
+                <span style={{
+                  fontFamily: "'Public Sans', sans-serif",
+                  fontSize: 14, fontWeight: 700, color: '#181f21',
+                }}>Set tasks in Plan My Day</span>
+                <span className="material-symbols-outlined" style={{ color: '#181f21', fontSize: 18 }}>chevron_right</span>
+              </div>
+            )}
           </div>
+
+          {/* ── Calendar Streak Card ──────────────────────────────────── */}
+          <StreakCalendar streak={streak} compact />
         </div>
       </section>
 

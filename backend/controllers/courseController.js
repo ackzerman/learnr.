@@ -47,7 +47,7 @@ const createManualCourse = async (req, res, next) => {
       title:        title.trim(),
       source:       "manual",
       // Sanitize tags — trim, lowercase, limit length and count
-      tags: (Array.isArray(tags) ? tags : []).slice(0, 20).map(t => String(t).trim().toLowerCase().slice(0, 50)).filter(Boolean),
+      tags: (Array.isArray(tags) ? tags : []).slice(0, 20).map(t => String(t).trim().toUpperCase().slice(0, 50)).filter(Boolean),
       totalVideos,
       totalDuration,
     });
@@ -254,7 +254,7 @@ const updateCourse = async (req, res, next) => {
         return next(new AppError("Tags must be an array.", 400));
       }
       // Sanitize tags — trim, lowercase, limit length and count
-      course.tags = tags.slice(0, 20).map(t => String(t).trim().toLowerCase().slice(0, 50)).filter(Boolean);
+      course.tags = tags.slice(0, 20).map(t => String(t).trim().toUpperCase().slice(0, 50)).filter(Boolean);
     }
 
     await course.save();
@@ -485,7 +485,7 @@ const importYoutubeCourse = async (req, res, next) => {
       playlistUrl,
       thumbnailUrl: items[0]?.thumbnailUrl || null,
       // Sanitize tags — trim, lowercase, limit length and count
-      tags: (Array.isArray(tags) ? tags : []).slice(0, 20).map(t => String(t).trim().toLowerCase().slice(0, 50)).filter(Boolean),
+      tags: (Array.isArray(tags) ? tags : []).slice(0, 20).map(t => String(t).trim().toUpperCase().slice(0, 50)).filter(Boolean),
       totalVideos,
       totalDuration,
     });
@@ -604,6 +604,147 @@ const getYoutubeVideoDuration = async (req, res, next) => {
   }
 };
 
+// ─── Reorder Videos (manual courses only) ────────────────────────────────────
+const reorderVideos = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { videoIds } = req.body;
+    const userId = req.userId;
+
+    if (!Array.isArray(videoIds)) {
+      return next(new AppError("videoIds must be an array.", 400));
+    }
+
+    const course = await Course.findById(id);
+    if (!course) return next(new AppError("Course not found.", 404));
+    if (course.userId.toString() !== userId.toString()) {
+      return next(new AppError("Not authorised.", 403));
+    }
+    if (course.source !== "manual") {
+      return next(new AppError("Cannot reorder videos in a non-manual course.", 400));
+    }
+
+    const videos = await Video.find({ courseId: id });
+    const existingVideoIds = videos.map(v => v._id.toString());
+    
+    if (videoIds.length !== existingVideoIds.length) {
+      return next(new AppError("Provided videoIds array length does not match the course's video count.", 400));
+    }
+
+    const bulkOps = videoIds.map((vid, index) => ({
+      updateOne: {
+        filter: { _id: vid, courseId: id },
+        update: { $set: { orderIndex: index } }
+      }
+    }));
+
+    if (bulkOps.length > 0) {
+      await Video.bulkWrite(bulkOps);
+    }
+
+    res.status(200).json({ message: "Videos reordered successfully" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Update Video (manual courses only) ────────────────────────────────────────
+const updateVideo = async (req, res, next) => {
+  try {
+    const { id: courseId, videoId } = req.params;
+    const { title, duration } = req.body;
+    const userId = req.userId;
+
+    const course = await Course.findById(courseId);
+    if (!course) return next(new AppError("Course not found.", 404));
+    if (course.userId.toString() !== userId.toString()) {
+      return next(new AppError("Not authorised.", 403));
+    }
+    if (course.source !== "manual") {
+      return next(new AppError("Cannot edit videos in a non-manual course.", 400));
+    }
+
+    const video = await Video.findOne({ _id: videoId, courseId });
+    if (!video) return next(new AppError("Video not found.", 404));
+
+    if (title !== undefined) video.title = title.trim();
+    
+    // If duration changes, we must update the course's totalDuration
+    if (duration !== undefined && typeof duration === "number" && duration > 0) {
+      const durationDiff = duration - video.duration;
+      video.duration = duration;
+      course.totalDuration = Math.max(0, course.totalDuration + durationDiff);
+      await course.save();
+    }
+
+    await video.save();
+
+    res.status(200).json({ message: "Video updated successfully", video });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Search Videos ────────────────────────────────────────────────────────────
+
+/**
+ * @route   GET /api/courses/search/videos?q=keyword
+ * @desc    Search for videos across a user's courses by video title or course title.
+ * @access  Protected
+ */
+const searchVideos = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const { q } = req.query;
+    if (!q || typeof q !== "string" || !q.trim()) {
+      return res.status(200).json({ videos: [] });
+    }
+
+    // 1. Get all courses for this user
+    const courses = await Course.find({ userId }).select("title _id").lean();
+    if (courses.length === 0) return res.status(200).json({ videos: [] });
+
+    const courseMap = {};
+    const courseIds = [];
+    courses.forEach((c) => {
+      courseIds.push(c._id);
+      courseMap[c._id.toString()] = c.title;
+    });
+
+    const regex = new RegExp(q.trim(), "i");
+
+    // 2. Find courses that match the query
+    const matchingCourseIds = courses
+      .filter((c) => regex.test(c.title))
+      .map((c) => c._id);
+
+    // 3. Find videos where title matches OR the course it belongs to matches
+    const videos = await Video.find({
+      courseId: { $in: courseIds },
+      $or: [
+        { title: regex },
+        { courseId: { $in: matchingCourseIds } },
+      ],
+    })
+      .limit(30)
+      .lean();
+
+    // 4. Attach course title to the response
+    const enrichedVideos = videos.map((v) => ({
+      _id: v._id,
+      title: v.title,
+      courseId: v.courseId,
+      courseTitle: courseMap[v.courseId.toString()],
+      duration: v.duration,
+      thumbnailUrl: v.thumbnailUrl,
+    }));
+
+    res.status(200).json({ videos: enrichedVideos });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   createManualCourse,
   getCourses,
@@ -615,4 +756,7 @@ module.exports = {
   importYoutubeCourse,
   getCourseDetails,
   getYoutubeVideoDuration,
+  reorderVideos,
+  updateVideo,
+  searchVideos,
 };

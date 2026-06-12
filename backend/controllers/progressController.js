@@ -1,9 +1,8 @@
 const Video        = require("../models/Video");
 const Progress     = require("../models/Progress");
 const DailyActivity = require("../models/DailyActivity");
-const User         = require("../models/User");
 const AppError     = require("../utils/AppError");
-const { getTodayString, calculateStreak } = require("../utils/dateHelpers");
+const { getTodayString } = require("../utils/dateHelpers");
 
 // ─── Update Video Progress ────────────────────────────────────────────────────
 
@@ -107,26 +106,12 @@ const updateProgress = async (req, res, next) => {
       );
     }
 
-    // ── 7. Update streak ──────────────────────────────────────────────────────
-
-    const user = await User.findById(userId);
-    const { newStreak, shouldUpdate } = calculateStreak(user.lastActiveDate, user.streak);
-
-    if (shouldUpdate) {
-      user.streak         = newStreak;
-      user.lastActiveDate = new Date();
-
-      if (newStreak > (user.maxStreak ?? 0)) {
-        user.maxStreak = newStreak;
-      }
-      await user.save();
-    }
-
-    // ── 8. Respond ────────────────────────────────────────────────────────────
+    // ── 7. Respond ────────────────────────────────────────────────────────────
+    // Streak is now driven by daily goal completion, not video progress.
+    // See goalController.js for streak logic.
 
     res.status(200).json({
       progress,
-      streak:    user.streak,
       completed: progress.completed,
     });
   } catch (err) {

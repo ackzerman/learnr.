@@ -132,6 +132,66 @@ export default function CourseDetail() {
     } catch (e) { toast(e.message, 'error'); }
   };
 
+  const [draggedIndex, setDraggedIndex] = useState(null);
+
+  const handleDragStart = (e, index) => {
+    // Only allow drag if we're dragging from the handle.
+    // The handle sets a class or data attribute? HTML5 DnD starts on the draggable element.
+    // We'll set draggable={true} on the row, but we want it to be initiated from the handle.
+    // Actually, setting draggable={true} on the whole row works if they click anywhere, but
+    // we can restrict it if needed. For now, let's just track the index.
+    setDraggedIndex(index);
+    // Needed for Firefox
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/html", e.target);
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault(); // Necessary to allow dropping
+    e.dataTransfer.dropEffect = "move";
+    if (draggedIndex === null || draggedIndex === index) return;
+    setData((prev) => {
+      const newVideos = [...prev.videos];
+      const draggedVideo = newVideos[draggedIndex];
+      newVideos.splice(draggedIndex, 1);
+      newVideos.splice(index, 0, draggedVideo);
+      return { ...prev, videos: newVideos };
+    });
+    setDraggedIndex(index);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    if (draggedIndex === null) return;
+    setDraggedIndex(null);
+    try {
+      const videoIds = data.videos.map(v => v.videoId);
+      await coursesAPI.reorderVideos(id, videoIds);
+      toast('Videos reordered');
+    } catch (err) {
+      toast('Failed to save video order: ' + err.message, 'error');
+      load();
+    }
+  };
+
+  const [editingVideoId, setEditingVideoId] = useState(null);
+  const [editVideoForm, setEditVideoForm] = useState({ title: '', duration: '' });
+
+  const startEditVideo = (v) => {
+    setEditingVideoId(v.videoId);
+    setEditVideoForm({ title: v.title, duration: v.duration ? (v.duration / 60).toString() : '0' });
+  };
+
+  const saveEditVideo = async (videoId) => {
+    try {
+      const durationSec = Math.round(parseFloat(editVideoForm.duration) * 60) || 0;
+      await coursesAPI.updateVideo(id, videoId, { title: editVideoForm.title, duration: durationSec });
+      toast('Video updated');
+      setEditingVideoId(null);
+      load();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
   if (loading) return <Spinner pad={80} />;
   if (!data) return <p style={{ color: '#747879', textAlign: 'center', padding: 60 }}>Course not found.</p>;
 
@@ -313,10 +373,24 @@ export default function CourseDetail() {
             const statusText = isComplete ? 'WATCHED' : wp > 0 ? `IN PROGRESS (${wp}%)` : 'UNWATCHED';
 
             return (
-              <div key={v.videoId} className="card card-sm" style={{
-                display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px',
-                opacity: !isComplete && wp === 0 ? 0.75 : 1,
-              }}>
+              <div
+                key={v.videoId}
+                className="card card-sm"
+                draggable={!isYT}
+                onDragStart={(e) => !isYT && handleDragStart(e, i)}
+                onDragOver={(e) => !isYT && handleDragOver(e, i)}
+                onDrop={(e) => !isYT && handleDrop(e)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px',
+                  opacity: (!isComplete && wp === 0) || draggedIndex === i ? 0.75 : 1,
+                  border: draggedIndex === i ? '2px dashed #181f21' : undefined,
+                }}
+              >
+                {!isYT && (
+                  <span className="material-symbols-outlined" style={{ color: '#c3c7c8', cursor: 'grab', fontSize: 24, flexShrink: 0 }}>
+                    drag_indicator
+                  </span>
+                )}
                 {/* Index number square */}
                 <div style={{
                   width: 40, height: 40, flexShrink: 0,
@@ -340,65 +414,91 @@ export default function CourseDetail() {
                   ) : null;
                 })()}
 
-                {/* Info — click to watch */}
-                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => navigate(`/courses/${id}/watch/${v.videoId}`)}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                    <p style={{
-                      fontFamily: "'Space Grotesk', sans-serif",
-                      color: '#181f21', fontSize: 16, fontWeight: 600, margin: 0,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {v.title}
-                    </p>
+                {/* Info & Actions */}
+                {editingVideoId === v.videoId ? (
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+                    <div style={{ flex: 2, minWidth: 150 }}>
+                      <input 
+                        className="input-field"
+                        style={{ width: '100%', padding: '8px 12px', fontSize: 14 }}
+                        placeholder="Video Title" 
+                        value={editVideoForm.title} 
+                        onChange={(e) => setEditVideoForm(f => ({ ...f, title: e.target.value }))} 
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 80 }}>
+                      <input 
+                        className="input-field"
+                        type="number" 
+                        step="any"
+                        style={{ width: '100%', padding: '8px 12px', fontSize: 14 }}
+                        placeholder="Minutes" 
+                        value={editVideoForm.duration} 
+                        onChange={(e) => setEditVideoForm(f => ({ ...f, duration: e.target.value }))} 
+                      />
+                    </div>
                     <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                      {isComplete && <span className="material-symbols-outlined" style={{ color: '#536348', fontSize: 20 }}>check_circle</span>}
-                      {starredMap[v.videoId] && <span className="material-symbols-outlined" style={{ color: '#003365', fontSize: 20 }}>star</span>}
+                      <button className="btn-primary" style={{ padding: '8px 12px', fontSize: 13 }} onClick={() => saveEditVideo(v.videoId)}>Save</button>
+                      <button className="btn-ghost" style={{ padding: '8px 12px', fontSize: 13 }} onClick={() => setEditingVideoId(null)}>Cancel</button>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                    <span className="label-caps" style={{ color: '#747879', fontSize: 10 }}>Duration: {fmt(v.duration)}</span>
-                    <span className="label-caps" style={{ color: statusColor, fontSize: 10 }}>Status: {statusText}</span>
-                  </div>
-                  {/* Progress Bar */}
-                  <div style={{ marginTop: 8 }}>
-                    <ProgressBar value={wp} color="#536348" height={6} />
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => navigate(`/courses/${id}/watch/${v.videoId}`)}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                        <p style={{
+                          flex: 1, minWidth: 0, paddingRight: 12,
+                          fontFamily: "'Space Grotesk', sans-serif",
+                          color: '#181f21', fontSize: 16, fontWeight: 600, margin: 0,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {v.title}
+                        </p>
+                        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                          {isComplete && <span className="material-symbols-outlined" style={{ color: '#536348', fontSize: 20 }}>check_circle</span>}
+                          {starredMap[v.videoId] && <span className="material-symbols-outlined" style={{ color: '#003365', fontSize: 20 }}>star</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                        <span className="label-caps" style={{ color: '#747879', fontSize: 10 }}>Duration: {fmt(v.duration)}</span>
+                        <span className="label-caps" style={{ color: statusColor, fontSize: 10 }}>Status: {statusText}</span>
+                      </div>
+                      <div style={{ marginTop: 8 }}>
+                        <ProgressBar value={wp} color="#536348" height={6} />
+                      </div>
+                    </div>
 
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
-                  {/* Star button */}
-                  <button
-                    onClick={() => toggleStar(v.videoId)}
-                    title={starredMap[v.videoId] ? 'Unstar video' : 'Star as important'}
-                    style={{
-                      background: 'transparent',
-                      border: '2px solid #181f21',
-                      cursor: 'pointer',
-                      fontSize: 16,
-                      lineHeight: 1,
-                      padding: '6px 8px',
-                      color: starredMap[v.videoId] ? '#003365' : '#c3c7c8',
-                      transition: 'all 0.15s',
-                    }}
-                    onMouseEnter={(e) => { if (!starredMap[v.videoId]) e.currentTarget.style.color = '#536348'; }}
-                    onMouseLeave={(e) => { if (!starredMap[v.videoId]) e.currentTarget.style.color = '#c3c7c8'; }}
-                  >
-                    {starredMap[v.videoId] ? '★' : '☆'}
-                  </button>
-                  <button
-                    className="btn-ghost"
-                    style={{ fontSize: 12 }}
-                    onClick={() => navigate(`/courses/${id}/watch/${v.videoId}`)}
-                  >
-                    {isComplete ? 'Rewatch' : wp > 0 ? 'Resume' : 'Watch'}
-                  </button>
-                  {!isYT && (
-                    <button className="btn-danger" style={{ padding: '6px 10px', fontSize: 13 }} onClick={() => deleteVideo(v.videoId, v.title)}>
-                      ✕
-                    </button>
-                  )}
-                </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+                      <button
+                        onClick={() => toggleStar(v.videoId)}
+                        title={starredMap[v.videoId] ? 'Unstar video' : 'Star as important'}
+                        style={{
+                          background: 'transparent', border: '2px solid #181f21', cursor: 'pointer',
+                          fontSize: 16, lineHeight: 1, padding: '6px 8px',
+                          color: starredMap[v.videoId] ? '#003365' : '#c3c7c8',
+                          transition: 'all 0.15s',
+                        }}
+                        onMouseEnter={(e) => { if (!starredMap[v.videoId]) e.currentTarget.style.color = '#536348'; }}
+                        onMouseLeave={(e) => { if (!starredMap[v.videoId]) e.currentTarget.style.color = '#c3c7c8'; }}
+                      >
+                        {starredMap[v.videoId] ? '★' : '☆'}
+                      </button>
+                      <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => navigate(`/courses/${id}/watch/${v.videoId}`)}>
+                        {isComplete ? 'Rewatch' : wp > 0 ? 'Resume' : 'Watch'}
+                      </button>
+                      {!isYT && (
+                        <>
+                          <button className="btn-ghost" style={{ padding: '6px 10px', fontSize: 13 }} onClick={() => startEditVideo(v)}>
+                            ✎
+                          </button>
+                          <button className="btn-danger" style={{ padding: '6px 10px', fontSize: 13 }} onClick={() => deleteVideo(v.videoId, v.title)}>
+                            ✕
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             );
           })}

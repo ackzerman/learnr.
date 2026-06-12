@@ -1,417 +1,863 @@
-import { useState, useEffect, useCallback } from 'react';
-import { goalsAPI } from '../api';
-import { Spinner, EmptyState } from '../components/UI';
+import { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { goalsAPI, coursesAPI } from '../api';
+import { Spinner, Modal, LabelInput } from '../components/UI';
 import { useToast } from '../hooks/useToast';
 
-/* ─── Task checkbox ──────────────────────────────────────────────────────── */
+/* ─── Task checkbox — retro square ────────────────────────────────────────── */
 function TaskCheckbox({ checked, onChange }) {
   return (
     <label style={{ position: 'relative', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
       <input type="checkbox" checked={checked} onChange={onChange} style={{ display: 'none' }} />
-      <div style={{
-        width: 24, height: 24,
-        border: '2px solid #181f21',
-        background: checked ? '#536348' : '#fbfaee',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 14, fontWeight: 800, color: '#fbfaee',
-        transition: 'all 0.15s',
-      }}>
+      <div
+        style={{
+          width: 20,
+          height: 20,
+          border: '2px solid #181f21',
+          background: checked ? '#536348' : '#fbfaee',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 12,
+          fontWeight: 800,
+          color: '#fbfaee',
+          transition: 'all 0.15s',
+        }}
+      >
         {checked && '✓'}
       </div>
     </label>
   );
 }
 
-/* ─── Plan Your Day ──────────────────────────────────────────────────────── */
+/* ─── Plan Your Day — Stitch Screen Layout ────────────────────────────────── */
 export default function PlanYourDay() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
 
-  // Goals
+  // Goal data
+  const [goal, setGoal] = useState(null);
   const [dailyGoal, setDailyGoal] = useState('');
-  const [weeklyGoal, setWeeklyGoal] = useState('');
-  const [dailySaved, setDailySaved] = useState(true);
-  const [weeklySaved, setWeeklySaved] = useState(true);
-
-  // Tasks (local state — persisted in localStorage)
   const [tasks, setTasks] = useState([]);
   const [newTask, setNewTask] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedVideo, setSelectedVideo] = useState(null);
 
-  // Goal history
-  const [historyTab, setHistoryTab] = useState('daily');
-  const [history, setHistory] = useState([]);
+  // Courses for "Active Course Progress"
+  const [courses, setCourses] = useState([]);
 
-  // Load from localStorage on mount
+  // Modal
+  const [showModal, setShowModal] = useState(false);
+
+  // Today's date formatted
+  const todayFormatted = new Date().toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('learnr_plan') || '{}');
-      const today = new Date().toISOString().slice(0, 10);
-      if (saved.date === today) {
-        setDailyGoal(saved.dailyGoal || '');
-        setWeeklyGoal(saved.weeklyGoal || '');
-        setTasks(saved.tasks || []);
+    const loadData = async () => {
+      try {
+        const [todayRes, courseRes] = await Promise.all([
+          goalsAPI.getToday(),
+          coursesAPI.list(1, 10),
+        ]);
+        const g = todayRes.goal;
+        setGoal(g);
+        setDailyGoal(g.description || '');
+        setTasks(g.tasks || []);
+        setCourses(courseRes.courses || []);
+      } catch (err) {
+        console.error(err);
       }
-      const hist = JSON.parse(localStorage.getItem('learnr_goal_history') || '[]');
-      setHistory(hist);
-    } catch (_) {}
-    setLoading(false);
+      setLoading(false);
+    };
+    loadData();
   }, []);
 
-  // Save to localStorage on change
-  const persist = useCallback((dg, wg, ts) => {
-    const today = new Date().toISOString().slice(0, 10);
-    localStorage.setItem('learnr_plan', JSON.stringify({
-      date: today, dailyGoal: dg, weeklyGoal: wg, tasks: ts,
-    }));
-  }, []);
+  // Debounced video search
+  useEffect(() => {
+    if (!newTask.trim() || (selectedVideo && selectedVideo.title === newTask.trim())) {
+      setSearchResults([]);
+      return;
+    }
+    setIsSearching(true);
+    const delay = setTimeout(async () => {
+      try {
+        const res = await coursesAPI.searchVideos(newTask.trim());
+        setSearchResults(res.videos || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+    return () => clearTimeout(delay);
+  }, [newTask, selectedVideo]);
 
+
+
+  // Daily goal description — debounced save
   const updateDailyGoal = (val) => {
     setDailyGoal(val);
-    setDailySaved(false);
-    persist(val, weeklyGoal, tasks);
-    setTimeout(() => setDailySaved(true), 600);
+    clearTimeout(updateDailyGoal._timer);
+    updateDailyGoal._timer = setTimeout(async () => {
+      try {
+        await goalsAPI.save({ type: 'daily', description: val });
+      } catch (_err) {
+        console.error(_err);
+      }
+    }, 800);
   };
 
-  const updateWeeklyGoal = (val) => {
-    setWeeklyGoal(val);
-    setWeeklySaved(false);
-    persist(dailyGoal, val, tasks);
-    setTimeout(() => setWeeklySaved(true), 600);
-  };
-
-  const addTask = () => {
+  const addTask = async () => {
     if (!newTask.trim()) return;
-    const ts = [...tasks, { id: Date.now(), text: newTask.trim(), done: false, course: '' }];
-    setTasks(ts);
-    setNewTask('');
-    persist(dailyGoal, weeklyGoal, ts);
-    toast('Task added ✓');
+    try {
+      const payload = { text: newTask.trim() };
+      if (selectedVideo && selectedVideo.title === newTask.trim()) {
+        payload.videoId = selectedVideo._id;
+        payload.courseId = selectedVideo.courseId;
+      }
+      const res = await goalsAPI.addTask(payload);
+      setGoal(res.goal);
+      setTasks(res.goal.tasks);
+      setNewTask('');
+      setSelectedVideo(null);
+      setSearchResults([]);
+      toast('Task added ✓');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
-  const toggleTask = (id) => {
-    const ts = tasks.map((t) => t.id === id ? { ...t, done: !t.done } : t);
-    setTasks(ts);
-    persist(dailyGoal, weeklyGoal, ts);
+  const toggleTask = async (taskId) => {
+    try {
+      const res = await goalsAPI.toggleTask(taskId);
+      setGoal(res.goal);
+      setTasks(res.goal.tasks);
+      if (res.allCompleted) {
+        toast('Daily goal complete!');
+      }
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
-  const deleteTask = (id) => {
-    const ts = tasks.filter((t) => t.id !== id);
-    setTasks(ts);
-    persist(dailyGoal, weeklyGoal, ts);
+  const deleteTask = async (taskId) => {
+    try {
+      const res = await goalsAPI.deleteTask(taskId);
+      setGoal(res.goal);
+      setTasks(res.goal.tasks);
+      toast('Task removed');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const completedCount = tasks.filter((t) => t.done).length;
-  const taskProgress = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
-
-  // Archive today's goal to history
-  const archiveDay = () => {
-    if (!dailyGoal.trim()) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const status = taskProgress === 100 ? 'ACHIEVED' : taskProgress >= 50 ? `PARTIAL (${taskProgress}%)` : 'MISSED';
-    const entry = { date: today, goal: dailyGoal, status, type: 'daily' };
-    const updated = [entry, ...history].slice(0, 30);
-    setHistory(updated);
-    localStorage.setItem('learnr_goal_history', JSON.stringify(updated));
-    // Reset daily
-    setDailyGoal('');
-    setTasks([]);
-    persist('', weeklyGoal, []);
-    toast('Day archived ✓');
-  };
+  const totalTasks = tasks.length;
 
   if (loading) return <Spinner pad={100} />;
 
-  const filteredHistory = history.filter((h) => h.type === historyTab);
+  // Courses with progress for the "Active Course Progress" panel
+  const activeCourses = courses
+    .filter((c) => c.totalVideos > 0)
+    .map((c) => ({
+      ...c,
+      progress: Math.round((c.completedVideos / c.totalVideos) * 100),
+    }))
+    .slice(0, 4);
 
   return (
-    <div className="page-wrapper fade-up">
-      <div style={{ marginBottom: 32 }}>
-        <h1 className="page-title">Plan Your Day</h1>
-        <p className="page-sub">Set goals, track tasks, stay focused</p>
+    <div className="page-wrapper fade-up" style={{ paddingBottom: 80 }}>
+      {/* ── Top Header Bar — Date + Nav + Add Goals ────────────── */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          height: 64,
+          borderBottom: '4px solid #181f21',
+          marginBottom: 32,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: 24,
+              fontWeight: 600,
+              color: '#181f21',
+            }}
+          >
+            {todayFormatted}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <button
+            className="btn-primary pixel-card"
+            style={{ padding: '10px 20px' }}
+            onClick={() => setShowModal(true)}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+              add
+            </span>
+            Add Goals
+          </button>
+        </div>
       </div>
 
-      {/* ── Goal Setting Section ──────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 32 }}>
-        {/* Daily Goal Card */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h2 className="section-header" style={{ margin: 0 }}>Daily Goal</h2>
-            <span className="label-caps" style={{
-              color: taskProgress === 100 ? '#536348' : '#003365',
-              fontSize: 10,
-            }}>
-              STATUS: {taskProgress === 100 ? 'COMPLETE' : 'IN PROGRESS'}
-            </span>
-          </div>
-          <input
-            className="input"
-            type="text"
-            placeholder="What will you accomplish today?"
-            value={dailyGoal}
-            onChange={(e) => updateDailyGoal(e.target.value)}
-            style={{ marginBottom: 16 }}
-          />
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span className="label-caps" style={{ color: '#747879' }}>Progress</span>
-              <span className="label-caps" style={{ color: '#181f21' }}>{completedCount}/{tasks.length} TASKS</span>
+      {/* ── Daily Goals Section ────────────────────────────────── */}
+      <section style={{ marginBottom: 40 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            borderBottom: '2px solid #181f21',
+            paddingBottom: 8,
+            marginBottom: 16,
+          }}
+        >
+          <h2
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: 32,
+              fontWeight: 700,
+              color: '#181f21',
+              letterSpacing: '-0.02em',
+              margin: 0,
+            }}
+          >
+            Daily Goals
+          </h2>
+          <span
+            className="label-caps"
+            style={{ color: '#434749' }}
+          >
+            {completedCount} / {totalTasks} COMPLETED
+          </span>
+        </div>
+
+        {/* Horizontal scrolling task cards */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 24,
+            overflowX: 'auto',
+            paddingBottom: 24,
+            paddingTop: 8,
+            paddingLeft: 2,
+            scrollSnapType: 'x mandatory',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+          }}
+        >
+          {tasks.length === 0 ? (
+            <div
+              style={{
+                minWidth: 320,
+                background: '#fbfaee',
+                border: '2px solid #181f21',
+                boxShadow: '4px 4px 0 0 #181f21',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <div style={{ height: 16, background: '#181f21', width: '100%' }} />
+              <div style={{ padding: 24, textAlign: 'center' }}>
+                <p style={{ fontSize: 32, marginBottom: 8 }}>📋</p>
+                <p
+                  style={{
+                    color: '#747879',
+                    fontSize: 14,
+                    fontFamily: "'Public Sans', sans-serif",
+                    marginBottom: 16,
+                  }}
+                >
+                  No tasks yet. Click "Add Goals" to get started.
+                </p>
+              </div>
             </div>
-            {/* Segmented progress */}
-            <div style={{
-              height: 20, width: '100%', background: '#e9e9dd',
-              border: '2px solid #181f21', display: 'flex', padding: 2,
-            }}>
-              {tasks.length > 0 ? tasks.map((t, i) => (
-                <div key={t.id} style={{
-                  flex: 1, height: '100%',
-                  background: t.done ? '#536348' : '#e9e9dd',
-                  borderRight: i < tasks.length - 1 ? '2px solid #fbfaee' : 'none',
-                  transition: 'background 0.3s',
-                }} />
-              )) : (
-                <div style={{ width: '100%', height: '100%', background: '#e9e9dd' }} />
+          ) : (
+            tasks.map((t, i) => (
+              <div
+                key={t._id}
+                style={{
+                  minWidth: 320,
+                  background: '#fbfaee',
+                  border: '2px solid #181f21',
+                  boxShadow: '4px 4px 0 0 #181f21',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  scrollSnapAlign: 'start',
+                  transition: 'all 0.1s ease',
+                }}
+              >
+                {/* Slate top bar */}
+                <div style={{ height: 16, background: '#181f21', width: '100%' }} />
+
+                {/* Card content */}
+                <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
+                  {/* Task number badge */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span
+                      style={{
+                        fontFamily: "'Space Mono', monospace",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: '#747879',
+                        letterSpacing: '0.1em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      TASK {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <button
+                      onClick={() => deleteTask(t._id)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#ba1a1a',
+                        opacity: 0.4,
+                        transition: 'opacity 0.15s',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.4')}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                        close
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Task text */}
+                  <h3
+                    style={{
+                      fontFamily: "'Space Grotesk', sans-serif",
+                      fontSize: 18,
+                      fontWeight: 600,
+                      lineHeight: 1.3,
+                      color: '#181f21',
+                      margin: 0,
+                      textDecoration: t.done ? 'line-through' : 'none',
+                      opacity: t.done ? 0.5 : 1,
+                      flex: 1,
+                    }}
+                  >
+                    {t.videoId && t.courseId ? (
+                      <Link
+                        to={`/courses/${t.courseId}/watch/${t.videoId}`}
+                        style={{ color: 'inherit', textDecoration: 'inherit' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {t.text} <span style={{ fontSize: 14, opacity: 0.7 }}>↗</span>
+                      </Link>
+                    ) : (
+                      t.text
+                    )}
+                  </h3>
+
+                  {/* Checkbox footer */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      paddingTop: 8,
+                      borderTop: '1px solid #efeee3',
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => toggleTask(t._id)}
+                    >
+                      <TaskCheckbox checked={t.done} onChange={() => { }} />
+                      <span
+                        style={{
+                          fontFamily: "'Space Grotesk', sans-serif",
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: t.done ? '#536348' : '#434749',
+                        }}
+                      >
+                        {t.done ? 'Completed' : 'Pending'}
+                      </span>
+                    </label>
+                    {t.done ? (
+                      <span
+                        className="material-symbols-outlined"
+                        style={{ color: '#536348', fontSize: 20 }}
+                      >
+                        check_circle
+                      </span>
+                    ) : (
+                      <span
+                        className="material-symbols-outlined"
+                        style={{ color: '#c3c7c8', fontSize: 20 }}
+                      >
+                        circle
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      {/* ── Plan Your Week — 2-Column Layout ───────────────────── */}
+      <section style={{ marginBottom: 40 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            borderBottom: '2px solid #181f21',
+            paddingBottom: 8,
+            marginBottom: 16,
+          }}
+        >
+          <h2
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: 32,
+              fontWeight: 700,
+              color: '#181f21',
+              letterSpacing: '-0.02em',
+              margin: 0,
+            }}
+          >
+            Plan Your Week
+          </h2>
+          <span className="label-caps" style={{ color: '#434749' }}>
+            {dailyGoal || 'SET YOUR GOAL'}
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24 }}>
+          {/* Left: Active Course Progress*/}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {/* Active Course Progress */}
+            <div
+              style={{
+                background: '#fbfaee',
+                border: '2px solid #181f21',
+                padding: 24,
+                boxShadow: '4px 4px 0 0 #181f21',
+              }}
+            >
+              <h3
+                style={{
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  marginBottom: 24,
+                  paddingLeft: 12,
+                  borderLeft: '4px solid #181f21',
+                  color: '#181f21',
+                }}
+              >
+                Active Course Progress
+              </h3>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                {activeCourses.length === 0 ? (
+                  <p
+                    style={{
+                      color: '#747879',
+                      fontSize: 14,
+                      fontFamily: "'Public Sans', sans-serif",
+                      textAlign: 'center',
+                      padding: 20,
+                    }}
+                  >
+                    No active courses yet.{' '}
+                    <span
+                      style={{ color: '#536348', cursor: 'pointer', textDecoration: 'underline' }}
+                      onClick={() => navigate('/courses')}
+                    >
+                      Browse courses
+                    </span>
+                  </p>
+                ) : (
+                  activeCourses.map((c) => (
+                    <div key={c.courseId}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          marginBottom: 8,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontFamily: "'Space Grotesk', sans-serif",
+                            fontSize: 16,
+                            fontWeight: 600,
+                            color: '#181f21',
+                          }}
+                        >
+                          {c.title}
+                        </span>
+                        <span className="label-caps" style={{ color: '#181f21' }}>
+                          {c.progress}%
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          height: 24,
+                          width: '100%',
+                          border: '2px solid #181f21',
+                          position: 'relative',
+                          overflow: 'hidden',
+                          background: '#ffffff',
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            height: '100%',
+                            background: '#536348',
+                            width: `${c.progress}%`,
+                            backgroundImage:
+                              'linear-gradient(to right, #fbfaee 2px, transparent 2px)',
+                            backgroundSize: '10% 100%',
+                            borderRight: c.progress > 0 && c.progress < 100 ? '2px solid #181f21' : 'none',
+                            transition: 'width 0.5s',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Upcoming Videos / Daily Goal Input + Task Queue */}
+          <div
+            style={{
+              background: '#181f21',
+              padding: 24,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "'Space Mono', monospace",
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#959c9f',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                marginBottom: 16,
+              }}
+            >
+              TODAY'S GOAL
+            </span>
+
+            <input
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                fontSize: 13,
+                fontFamily: "'Public Sans', sans-serif",
+                background: '#fbfaee',
+                border: '2px solid #fbfaee',
+                color: '#181f21',
+                outline: 'none',
+                marginBottom: 16,
+              }}
+              placeholder="What will you accomplish today?"
+              value={dailyGoal}
+              onChange={(e) => updateDailyGoal(e.target.value)}
+            />
+
+            <span
+              style={{
+                fontFamily: "'Space Mono', monospace",
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#959c9f',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                marginBottom: 12,
+              }}
+            >
+              TASK QUEUE
+            </span>
+
+            {/* Task list in dark panel */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                maxHeight: 300,
+                paddingRight: 4,
+              }}
+            >
+              {tasks.length === 0 ? (
+                <p
+                  style={{
+                    color: '#959c9f',
+                    fontSize: 13,
+                    fontFamily: "'Public Sans', sans-serif",
+                    textAlign: 'center',
+                    padding: '20px 0',
+                  }}
+                >
+                  No tasks in queue
+                </p>
+              ) : (
+                tasks.map((t, i) => (
+                  <div
+                    key={t._id}
+                    style={{
+                      borderBottom: i < tasks.length - 1 ? '1px solid #41484a' : 'none',
+                      paddingBottom: 12,
+                      marginBottom: 12,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontFamily: "'Space Grotesk', sans-serif",
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: t.done ? '#959c9f' : '#fbfaee',
+                        textDecoration: t.done ? 'line-through' : 'none',
+                        transition: 'color 0.15s',
+                        margin: 0,
+                      }}
+                    >
+                      {t.videoId && t.courseId ? (
+                        <Link
+                          to={`/courses/${t.courseId}/watch/${t.videoId}`}
+                          style={{ color: 'inherit', textDecoration: 'inherit' }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {t.text} <span style={{ fontSize: 12, opacity: 0.7 }}>↗</span>
+                        </Link>
+                      ) : (
+                        t.text
+                      )}
+                    </p>
+                    <span
+                      style={{
+                        fontFamily: "'Space Mono', monospace",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: '#747879',
+                        letterSpacing: '0.1em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {t.done ? '✓ DONE' : `TASK ${String(i + 1).padStart(2, '0')}`}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+            
+
+            {/* Add task inline */}
+            <div style={{ marginTop: 'auto', paddingTop: 12, position: 'relative' }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  style={{
+                    flex: 1,
+                    padding: '10px 12px',
+                    fontSize: 13,
+                    fontFamily: "'Public Sans', sans-serif",
+                    background: 'transparent',
+                    border: '2px solid #fbfaee',
+                    color: '#fbfaee',
+                    outline: 'none',
+                  }}
+                  placeholder="Add a task..."
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') addTask();
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={addTask}
+                  style={{
+                    background: '#fbfaee',
+                    border: '2px solid #fbfaee',
+                    color: '#181f21',
+                    padding: '0 16px',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ADD
+                </button>
+              </div>
+              {!showModal && searchResults.length > 0 && (
+                <div style={{
+                  position: 'absolute', bottom: '100%', left: 0, right: 0, background: '#181f21',
+                  border: '2px solid #fbfaee', borderBottom: 'none', zIndex: 10,
+                  maxHeight: 180, overflowY: 'auto'
+                }}>
+                  {searchResults.map((v) => (
+                    <div
+                      key={v._id}
+                      style={{ padding: '8px 12px', borderBottom: '1px solid #41484a', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+                      onClick={() => {
+                        setSelectedVideo(v);
+                        setNewTask(v.title);
+                        setSearchResults([]);
+                      }}
+                    >
+                      <strong style={{ fontSize: 13, fontFamily: "'Space Grotesk', sans-serif", color: '#fbfaee' }}>{v.title}</strong>
+                      <span style={{ fontSize: 11, color: '#959c9f' }}>{v.courseTitle}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
         </div>
+      </section>
 
-        {/* Weekly Goal Card */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h2 className="section-header" style={{ margin: 0 }}>Weekly Goal</h2>
-            <span className="label-caps" style={{ color: '#003365', fontSize: 10 }}>
-              MILESTONE
-            </span>
-          </div>
-          <input
-            className="input"
-            type="text"
-            placeholder="Set your weekly objective..."
-            value={weeklyGoal}
-            onChange={(e) => updateWeeklyGoal(e.target.value)}
-            style={{ marginBottom: 16 }}
-          />
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span className="label-caps" style={{ color: '#747879' }}>Weekly Progress</span>
-              <span className="label-caps" style={{ color: '#181f21' }}>Track manually</span>
-            </div>
-            <div style={{
-              height: 20, width: '100%', background: '#e9e9dd',
-              border: '2px solid #181f21', position: 'relative', overflow: 'hidden', padding: 2,
-            }}>
-              <div style={{
-                height: '100%', background: '#baccab', width: '0%',
-                borderRight: '2px solid #181f21', transition: 'width 0.5s',
-              }} />
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* ── Task Workspace ────────────────────────────────────────────── */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 32, borderWidth: '4px' }}>
-        {/* Header bar */}
-        <div style={{
-          background: '#181f21', padding: '16px 24px',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        }}>
-          <h2 style={{
-            fontFamily: "'Space Grotesk', sans-serif",
-            fontSize: 20, fontWeight: 700, color: '#fbfaee', margin: 0,
-          }}>Today's Learning Tasks</h2>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input
-              className="input"
-              style={{
-                width: 260, padding: '8px 12px', fontSize: 13,
-                background: '#fbfaee', border: '2px solid #fbfaee',
-              }}
-              placeholder="Add a new task..."
-              value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') addTask(); }}
+
+      {/* ── Add Goals Modal ────────────────────────────────────── */}
+      {showModal && (
+        <Modal title="Add Goal for Today" onClose={() => setShowModal(false)} wide>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Goal description */}
+            <LabelInput
+              label="Daily Goal Description"
+              placeholder="What will you accomplish today?"
+              value={dailyGoal}
+              onChange={(e) => updateDailyGoal(e.target.value)}
             />
-            <button
-              onClick={addTask}
-              style={{
-                background: '#536348', color: '#fbfaee',
-                border: 'none', padding: '8px 16px', cursor: 'pointer',
-                fontFamily: "'Space Mono', monospace",
-                fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 6,
-                transition: 'background 0.15s',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = '#3c4b32'}
-              onMouseLeave={(e) => e.currentTarget.style.background = '#536348'}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
-              ADD TASK
-            </button>
-          </div>
-        </div>
 
-        {/* Task list */}
-        {tasks.length === 0 ? (
-          <div style={{ padding: '48px 24px', textAlign: 'center' }}>
-            <p style={{ fontSize: 32, marginBottom: 8 }}>📋</p>
-            <p style={{ color: '#747879', fontSize: 14, fontFamily: "'Public Sans', sans-serif" }}>
-              No tasks yet. Add your first learning task above.
-            </p>
-          </div>
-        ) : (
-          <div>
-            {tasks.map((t, i) => (
-              <div
-                key={t.id}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '16px 24px', borderBottom: i < tasks.length - 1 ? '2px solid #181f21' : 'none',
-                  transition: 'background 0.15s',
-                }}
-                className="task-row"
-                onMouseEnter={(e) => e.currentTarget.style.background = '#efeee3'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-                  <TaskCheckbox checked={t.done} onChange={() => toggleTask(t.id)} />
-                  <div>
-                    <p style={{
-                      fontFamily: "'Public Sans', sans-serif",
-                      fontWeight: 700, color: '#181f21', margin: 0, fontSize: 15,
-                      textDecoration: t.done ? 'line-through' : 'none',
-                      opacity: t.done ? 0.5 : 1,
-                    }}>
-                      {t.text}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => deleteTask(t.id)}
-                  style={{
-                    background: 'transparent', border: 'none', cursor: 'pointer',
-                    color: '#ba1a1a', opacity: 0.4, transition: 'opacity 0.15s',
+            {/* Add task */}
+            <div>
+              <label className="label" style={{ marginBottom: 8, display: 'block' }}>Add a Learning Task</label>
+              <div style={{ display: 'flex', gap: 8, position: 'relative' }}>
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="e.g. Watch Docker Networking video..."
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') addTask();
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                  onMouseLeave={(e) => e.currentTarget.style.opacity = '0.4'}
+                  style={{ flex: 1 }}
+                />
+                {searchResults.length > 0 && (
+                  <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 60, background: '#fff',
+                    border: '2px solid #181f21', zIndex: 10,
+                    maxHeight: 180, overflowY: 'auto', boxShadow: '4px 4px 0 0 #181f21'
+                  }}>
+                    {searchResults.map((v) => (
+                      <div
+                        key={v._id}
+                        style={{ padding: '8px 12px', borderBottom: '1px solid #e9e9dd', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+                        onClick={() => {
+                          setSelectedVideo(v);
+                          setNewTask(v.title);
+                          setSearchResults([]);
+                        }}
+                      >
+                        <strong style={{ fontSize: 14, fontFamily: "'Space Grotesk', sans-serif" }}>{v.title}</strong>
+                        <span style={{ fontSize: 12, color: '#747879' }}>{v.courseTitle}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={addTask}
+                  style={{ padding: '8px 16px', display: 'flex', alignItems: 'center' }}
                 >
-                  <span className="material-symbols-outlined" style={{ fontSize: 20 }}>delete</span>
+                  <span className="material-symbols-outlined" style={{ fontSize: 20 }}>add</span>
                 </button>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
 
-        {/* Footer */}
-        {tasks.length > 0 && (
-          <div style={{
-            padding: '12px 24px', background: '#f5f4e8',
-            borderTop: '2px solid #181f21',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}>
-            <span className="label-caps" style={{ color: '#747879', fontSize: 10 }}>
-              {completedCount} of {tasks.length} complete
-            </span>
+            {/* Current tasks preview */}
+            {tasks.length > 0 && (
+              <div>
+                <label className="label" style={{ marginBottom: 8, display: 'block' }}>Current Tasks ({tasks.length})</label>
+                <div style={{ maxHeight: 200, overflowY: 'auto', border: '2px solid #e9e9dd' }}>
+                  {tasks.map((t, i) => (
+                    <div key={t._id} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '12px 16px', borderBottom: i < tasks.length - 1 ? '1px solid #e9e9dd' : 'none',
+                      background: t.done ? '#f5f4e8' : 'transparent',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                          width: 32, height: 32, background: '#181f21', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center'
+                        }}>
+                          <span className="material-symbols-outlined" style={{ color: '#fbfaee', fontSize: 18 }}>
+                            {t.done ? 'check' : 'task_alt'}
+                          </span>
+                        </div>
+                        <span style={{
+                          fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14,
+                          color: '#181f21', textDecoration: t.done ? 'line-through' : 'none',
+                          opacity: t.done ? 0.5 : 1,
+                        }}>
+                          {t.videoId && t.courseId ? (
+                            <Link
+                              to={`/courses/${t.courseId}/watch/${t.videoId}`}
+                              style={{ color: 'inherit', textDecoration: 'inherit' }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {t.text} <span style={{ fontSize: 12, opacity: 0.7 }}>↗</span>
+                            </Link>
+                          ) : (
+                            t.text
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
             <button
-              onClick={archiveDay}
-              className="label-caps"
-              style={{
-                color: '#181f21', background: 'transparent', border: 'none',
-                cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 4,
-                fontSize: 11,
-              }}
+              className="btn-primary"
+              onClick={() => setShowModal(false)}
+              style={{ width: '100%', marginTop: 8 }}
             >
-              ARCHIVE & RESET DAY
+              DONE
             </button>
           </div>
-        )}
-      </div>
-
-      {/* ── Goal History & Records ────────────────────────────────────── */}
-      <div>
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 32, borderBottom: '2px solid rgba(24,31,33,0.15)', marginBottom: 20 }}>
-          <button
-            onClick={() => setHistoryTab('daily')}
-            className="label-caps"
-            style={{
-              paddingBottom: 12, background: 'transparent', border: 'none', cursor: 'pointer',
-              borderBottom: historyTab === 'daily' ? '4px solid #181f21' : '4px solid transparent',
-              color: historyTab === 'daily' ? '#181f21' : '#747879',
-              transition: 'all 0.15s',
-            }}
-          >
-            PAST DAILY GOALS
-          </button>
-          <button
-            onClick={() => setHistoryTab('weekly')}
-            className="label-caps"
-            style={{
-              paddingBottom: 12, background: 'transparent', border: 'none', cursor: 'pointer',
-              borderBottom: historyTab === 'weekly' ? '4px solid #181f21' : '4px solid transparent',
-              color: historyTab === 'weekly' ? '#181f21' : '#747879',
-              transition: 'all 0.15s',
-            }}
-          >
-            PAST WEEKLY GOALS
-          </button>
-        </div>
-
-        {filteredHistory.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <p style={{ color: '#747879', fontSize: 14, fontFamily: "'Public Sans', sans-serif" }}>
-              No past {historyTab} goals yet. Archive your first day to see history here.
-            </p>
-          </div>
-        ) : (
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: '#e4e3d7', borderBottom: '2px solid #181f21' }}>
-                  <th className="label-caps" style={{ padding: 16, fontSize: 11 }}>Date</th>
-                  <th className="label-caps" style={{ padding: 16, fontSize: 11 }}>Goal Description</th>
-                  <th className="label-caps" style={{ padding: 16, fontSize: 11, textAlign: 'right' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredHistory.map((h, i) => {
-                  const statusBg = h.status === 'ACHIEVED' ? '#a8ba9a'
-                    : h.status.startsWith('PARTIAL') ? '#baccab'
-                    : '#ffdad6';
-                  const statusColor = h.status === 'ACHIEVED' ? '#ffffff'
-                    : h.status.startsWith('PARTIAL') ? '#3c4b32'
-                    : '#93000a';
-
-                  return (
-                    <tr key={i} style={{ borderBottom: i < filteredHistory.length - 1 ? '2px solid #efeee3' : 'none' }}>
-                      <td className="label-caps" style={{ padding: 16, fontSize: 11, color: '#747879' }}>
-                        {new Date(h.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
-                      </td>
-                      <td style={{
-                        padding: 16, fontFamily: "'Public Sans', sans-serif",
-                        fontWeight: 700, color: '#181f21',
-                      }}>
-                        {h.goal}
-                      </td>
-                      <td style={{ padding: 16, textAlign: 'right' }}>
-                        <span style={{
-                          display: 'inline-block', padding: '4px 12px',
-                          background: statusBg, color: statusColor,
-                          fontFamily: "'Space Mono', monospace",
-                          fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
-                          border: '2px solid #181f21',
-                        }}>
-                          {h.status}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </Modal>
+      )}
     </div>
   );
 }

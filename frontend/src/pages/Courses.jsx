@@ -290,6 +290,7 @@ export default function Courses() {
               color: filterTags.length === 0 ? '#ffffff' : '#181f21',
               fontFamily: "'Space Grotesk', sans-serif",
               fontSize: 16, fontWeight: 600, cursor: 'pointer',
+              textTransform: 'uppercase',
               boxShadow: filterTags.length === 0 ? '4px 4px 0px 0px #181f21' : 'none',
               transition: 'all 0.15s',
             }}
@@ -310,6 +311,7 @@ export default function Courses() {
                   color: isActive ? '#ffffff' : '#181f21',
                   fontFamily: "'Space Grotesk', sans-serif",
                   fontSize: 16, fontWeight: 600, cursor: 'pointer',
+                  textTransform: 'uppercase',
                   boxShadow: isActive ? '4px 4px 0px 0px #181f21' : 'none',
                   transition: 'all 0.15s',
                 }}

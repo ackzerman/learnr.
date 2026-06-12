@@ -96,7 +96,7 @@ export default function VideoPlayer() {
           : v
       ));
       if (d.completed && !vid.progress.completed) {
-        toast('Video complete! ✓', 'success');
+        toast('Video complete!', 'success');
         setCurVid((c) => c ? { ...c, progress: { ...c.progress, completed: true } } : c);
       }
     } catch (_) { }
@@ -129,8 +129,8 @@ export default function VideoPlayer() {
           setWatched(currentT);
         }
 
-        // Sync to backend every 15 seconds
-        if (Date.now() - lastSyncRef.current >= 15000) {
+        // Sync to backend every 10 seconds
+        if (Date.now() - lastSyncRef.current >= 10000) {
           lastSyncRef.current = Date.now();
           const vid = curVidRef.current;
           if (vid) {
@@ -214,7 +214,7 @@ export default function VideoPlayer() {
       setVideos((prev) => prev.map((v) =>
         v.videoId === curVid.videoId ? { ...v, progress: { ...v.progress, completed: true } } : v
       ));
-      toast('Marked as complete ✓');
+      toast('Marked as complete');
     } catch (e) { toast(e.message, 'error'); }
   };
 
@@ -317,7 +317,7 @@ export default function VideoPlayer() {
               <p className="label-caps" style={{ color: '#747879', fontSize: 10, margin: 0 }}>
                 {fmt(curVid.duration)} &nbsp;·&nbsp; Video {idx + 1} of {videos.length}
                 {curVid.progress.completed && (
-                  <span style={{ color: '#536348', marginLeft: 10, fontWeight: 700 }}>✓ Completed</span>
+                  <span style={{ color: '#536348', marginLeft: 10, fontWeight: 700 }}>Completed</span>
                 )}
               </p>
             </div>
@@ -341,13 +341,7 @@ export default function VideoPlayer() {
               >
                 {starred ? '★' : '☆'}
               </button>
-              {/*<button
-                className="btn-ghost"
-                style={{ borderColor: playing ? 'rgba(83,99,72,0.5)' : '', color: playing ? '#536348' : '' }}
-                onClick={() => setPlaying((p) => !p)}
-              >
-                {playing ? '⏸ Timer on' : '▶ Start timer'}
-              </button>*/}
+              
               {!curVid.progress.completed && (
                 <button className="btn-success" onClick={markComplete}>Mark complete</button>
               )}
@@ -382,7 +376,7 @@ export default function VideoPlayer() {
             </h3>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <span className="label-caps" style={{ fontSize: 10, color: noteSaved ? '#536348' : '#747879', transition: 'color 0.3s' }}>
-                {noteSaved ? 'Saved ✓' : 'Saving…'}
+                {noteSaved ? 'Saved ' : 'Saving…'}
               </span>
               {note && <button className="btn-danger" style={{ fontSize: 12, padding: '4px 10px' }} onClick={deleteNote}>Delete note</button>}
             </div>
