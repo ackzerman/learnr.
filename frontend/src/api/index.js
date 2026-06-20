@@ -66,11 +66,17 @@ export const analyticsAPI = {
 // ─── Goals (Plan Your Day) ────────────────────────────────────────────────────
 export const goalsAPI = {
   getToday:    ()           => api.get('/goals/today'),
+  getByDate:   (date)       => api.get(`/goals/date/${date}`),
   save:        (body)       => api.post('/goals', body),
   history:     (type, page) => api.get(`/goals/history?type=${type}&page=${page || 1}`),
   addTask:     (body)       => api.post('/goals/tasks', body),
-  toggleTask:  (taskId)     => api.patch(`/goals/tasks/${taskId}`),
-  deleteTask:  (taskId)     => api.delete(`/goals/tasks/${taskId}`),
+  toggleTask:  (taskId, date) => api.patch(`/goals/tasks/${taskId}${date ? `?date=${date}` : ''}`),
+  deleteTask:  (taskId, date) => api.delete(`/goals/tasks/${taskId}${date ? `?date=${date}` : ''}`),
+  // Weekly
+  getWeekly:         ()       => api.get('/goals/weekly'),
+  addWeeklyTask:     (body)   => api.post('/goals/weekly/tasks', body),
+  toggleWeeklyTask:  (taskId) => api.patch(`/goals/weekly/tasks/${taskId}`),
+  deleteWeeklyTask:  (taskId) => api.delete(`/goals/weekly/tasks/${taskId}`),
 };
 
 // ─── Streak ───────────────────────────────────────────────────────────────────

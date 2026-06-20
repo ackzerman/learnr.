@@ -8,38 +8,49 @@
 // ─── Get Today's Date String ──────────────────────────────────────────────────
 
 /**
- * Returns today's date as a YYYY-MM-DD string in UTC.
- * Using UTC keeps dates consistent regardless of the server's timezone.
+ * Returns today's date as a YYYY-MM-DD string in local time.
+ * Using local time keeps dates consistent with the user's timezone.
  *
  * @returns {string}  e.g. "2024-07-15"
  */
 const getTodayString = () => {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 };
 
 // ─── Get Yesterday's Date String ─────────────────────────────────────────────
 
 /**
- * Returns yesterday's date as a YYYY-MM-DD string in UTC.
+ * Returns yesterday's date as a YYYY-MM-DD string in local time.
  *
  * @returns {string}  e.g. "2024-07-14"
  */
 const getYesterdayString = () => {
   const d = new Date();
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
+  d.setDate(d.getDate() - 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 };
 
 // ─── Convert Date → YYYY-MM-DD String ────────────────────────────────────────
 
 /**
- * Normalises any Date object or ISO string into a YYYY-MM-DD string in UTC.
+ * Normalises any Date object or ISO string into a YYYY-MM-DD string in local time.
  *
  * @param   {Date|string} date
  * @returns {string}
  */
 const toDateString = (date) => {
-  return new Date(date).toISOString().slice(0, 10);
+  const d = new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 };
 
 // ─── Calculate New Streak ─────────────────────────────────────────────────────
@@ -82,4 +93,23 @@ const calculateStreak = (lastActiveDate, currentStreak) => {
   return { newStreak: 1, shouldUpdate: true };
 };
 
-module.exports = { getTodayString, getYesterdayString, toDateString, calculateStreak };
+module.exports = { getTodayString, getYesterdayString, toDateString, calculateStreak, getMondayString };
+
+// ─── Get Monday of Current Week ───────────────────────────────────────────────
+
+/**
+ * Returns the Monday of the current week as a YYYY-MM-DD string in local time.
+ * If today is Monday, returns today. Otherwise walks back to the most recent Monday.
+ *
+ * @returns {string}  e.g. "2024-07-15"
+ */
+function getMondayString() {
+  const d = new Date();
+  const dayOfWeek = d.getDay(); // 0 = Sun, 1 = Mon, ...
+  const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // days since Monday
+  d.setDate(d.getDate() - diff);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}

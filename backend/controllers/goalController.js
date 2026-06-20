@@ -2,7 +2,7 @@ const Goal = require("../models/Goal");
 const GoalCompletion = require("../models/GoalCompletion");
 const User = require("../models/User");
 const AppError = require("../utils/AppError");
-const { getTodayString } = require("../utils/dateHelpers");
+const { getTodayString, getMondayString } = require("../utils/dateHelpers");
 
 // ─── Get Today's Goal ─────────────────────────────────────────────────────────
 
@@ -29,6 +29,45 @@ const getToday = async (req, res, next) => {
     }
 
     res.status(200).json({ goal });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Get Goal by Date ─────────────────────────────────────────────────────────
+
+/**
+ * @route   GET /api/goals/date/:date
+ * @desc    Get a goal for a specific date (YYYY-MM-DD). Does NOT create one if absent.
+ * @access  Protected
+ */
+const getByDate = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const { date } = req.params;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return next(new AppError("Date must be in YYYY-MM-DD format.", 400));
+    }
+
+    const today = getTodayString();
+    const isToday = date === today;
+
+    let goal = await Goal.findOne({ userId, date, type: "daily" });
+
+    // Only auto-create for today
+    if (!goal && isToday) {
+      goal = await Goal.create({
+        userId,
+        date: today,
+        type: "daily",
+        description: "",
+        tasks: [],
+      });
+    }
+
+    // Return null goal for past dates with no data
+    res.status(200).json({ goal: goal || null, isToday });
   } catch (err) {
     next(err);
   }
@@ -133,11 +172,12 @@ const toggleTask = async (req, res, next) => {
   try {
     const userId = req.userId;
     const { taskId } = req.params;
+    const date = req.query.date || getTodayString();
     const today = getTodayString();
 
-    const goal = await Goal.findOne({ userId, date: today, type: "daily" });
+    const goal = await Goal.findOne({ userId, date, type: "daily" });
     if (!goal) {
-      return next(new AppError("No goal found for today.", 404));
+      return next(new AppError("No goal found for this date.", 404));
     }
 
     const task = goal.tasks.id(taskId);
@@ -155,8 +195,8 @@ const toggleTask = async (req, res, next) => {
     // If all tasks just became done, record a GoalCompletion for streak
     if (allDone) {
       await GoalCompletion.findOneAndUpdate(
-        { userId, date: today },
-        { userId, date: today },
+        { userId, date },
+        { userId, date },
         { upsert: true }
       );
 
@@ -181,11 +221,11 @@ const deleteTask = async (req, res, next) => {
   try {
     const userId = req.userId;
     const { taskId } = req.params;
-    const today = getTodayString();
+    const date = req.query.date || getTodayString();
 
-    const goal = await Goal.findOne({ userId, date: today, type: "daily" });
+    const goal = await Goal.findOne({ userId, date, type: "daily" });
     if (!goal) {
-      return next(new AppError("No goal found for today.", 404));
+      return next(new AppError("No goal found for this date.", 404));
     }
 
     const task = goal.tasks.id(taskId);
@@ -275,15 +315,18 @@ const _recalculateStreak = async (userId) => {
 
   // If today isn't completed, check if yesterday started a streak
   if (!completedDates.has(today)) {
-    checkDate.setUTCDate(checkDate.getUTCDate() - 1);
+    checkDate.setDate(checkDate.getDate() - 1);
   }
 
   // Walk backwards counting consecutive completed days
   for (let i = 0; i < 365; i++) {
-    const dateStr = checkDate.toISOString().slice(0, 10);
+    const y = checkDate.getFullYear();
+    const m = String(checkDate.getMonth() + 1).padStart(2, '0');
+    const day = String(checkDate.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${day}`;
     if (completedDates.has(dateStr)) {
       streak++;
-      checkDate.setUTCDate(checkDate.getUTCDate() - 1);
+      checkDate.setDate(checkDate.getDate() - 1);
     } else {
       break;
     }
@@ -298,4 +341,158 @@ const _recalculateStreak = async (userId) => {
   await user.save();
 };
 
-module.exports = { getToday, saveGoal, addTask, toggleTask, deleteTask, getHistory };
+// ─── Get Weekly Goal ──────────────────────────────────────────────────────────
+
+/**
+ * @route   GET /api/goals/weekly
+ * @desc    Get or create the weekly goal for the current week (keyed by Monday).
+ * @access  Protected
+ */
+const getWeekly = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const monday = getMondayString();
+
+    let goal = await Goal.findOne({ userId, date: monday, type: "weekly" });
+
+    if (!goal) {
+      goal = await Goal.create({
+        userId,
+        date: monday,
+        type: "weekly",
+        description: "",
+        tasks: [],
+      });
+    }
+
+    res.status(200).json({ goal, weekStart: monday });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Add Weekly Task ──────────────────────────────────────────────────────────
+
+/**
+ * @route   POST /api/goals/weekly/tasks
+ * @desc    Add a task to this week's weekly goal.
+ * @body    { text: string, videoId?, courseId? }
+ * @access  Protected
+ */
+const addWeeklyTask = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const monday = getMondayString();
+    const { text, videoId, courseId } = req.body;
+
+    if (!text || typeof text !== "string" || !text.trim()) {
+      return next(new AppError("Task text is required.", 400));
+    }
+
+    const safeText = text.trim().slice(0, 200);
+
+    let goal = await Goal.findOne({ userId, date: monday, type: "weekly" });
+    if (!goal) {
+      goal = await Goal.create({
+        userId,
+        date: monday,
+        type: "weekly",
+        description: "",
+        tasks: [],
+      });
+    }
+
+    if (goal.tasks.length >= 30) {
+      return next(new AppError("Maximum 30 tasks per week.", 400));
+    }
+
+    const newTask = { text: safeText, done: false };
+    if (videoId && courseId) {
+      newTask.videoId = videoId;
+      newTask.courseId = courseId;
+    }
+
+    goal.tasks.push(newTask);
+    goal.completed = false;
+    await goal.save();
+
+    res.status(201).json({ goal });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Toggle Weekly Task ───────────────────────────────────────────────────────
+
+/**
+ * @route   PATCH /api/goals/weekly/tasks/:taskId
+ * @desc    Toggle a weekly task's done status.
+ * @access  Protected
+ */
+const toggleWeeklyTask = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const { taskId } = req.params;
+    const monday = getMondayString();
+
+    const goal = await Goal.findOne({ userId, date: monday, type: "weekly" });
+    if (!goal) {
+      return next(new AppError("No weekly goal found.", 404));
+    }
+
+    const task = goal.tasks.id(taskId);
+    if (!task) {
+      return next(new AppError("Task not found.", 404));
+    }
+
+    task.done = !task.done;
+
+    const allDone = goal.tasks.length > 0 && goal.tasks.every((t) => t.done);
+    goal.completed = allDone;
+    await goal.save();
+
+    res.status(200).json({ goal, allCompleted: allDone });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Delete Weekly Task ───────────────────────────────────────────────────────
+
+/**
+ * @route   DELETE /api/goals/weekly/tasks/:taskId
+ * @desc    Remove a task from this week's weekly goal.
+ * @access  Protected
+ */
+const deleteWeeklyTask = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const { taskId } = req.params;
+    const monday = getMondayString();
+
+    const goal = await Goal.findOne({ userId, date: monday, type: "weekly" });
+    if (!goal) {
+      return next(new AppError("No weekly goal found.", 404));
+    }
+
+    const task = goal.tasks.id(taskId);
+    if (!task) {
+      return next(new AppError("Task not found.", 404));
+    }
+
+    task.deleteOne();
+
+    const allDone = goal.tasks.length > 0 && goal.tasks.every((t) => t.done);
+    goal.completed = allDone;
+    await goal.save();
+
+    res.status(200).json({ goal });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = {
+  getToday, getByDate, saveGoal, addTask, toggleTask, deleteTask, getHistory,
+  getWeekly, addWeeklyTask, toggleWeeklyTask, deleteWeeklyTask,
+};
