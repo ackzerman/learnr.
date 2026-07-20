@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { coursesAPI, progressAPI, notesAPI } from '../api';
 import { fmt, pct, ytVideoId, ytThumb } from '../utils';
-import { Spinner, ProgressBar, VideoCircle } from '../components/UI';
+import { Spinner, ProgressBar, VideoCircle, EmptyState } from '../components/UI';
 import { useToast } from '../hooks/useToast';
 
 export default function VideoPlayer() {
@@ -47,9 +47,12 @@ export default function VideoPlayer() {
       setCourse(d.course);
       setVideos(d.videos);
       const vid = d.videos.find((v) => v.videoId === videoId) || d.videos[0];
-      setCurVid(vid);
-      setWatched(vid?.progress?.watchedSeconds || 0);
-      setStarred(vid?.progress?.starred || false);
+      setCurVid(vid || null);
+      // Course has no videos (e.g. all were deleted, stale link) — bail out
+      // to a clear empty state instead of crashing on vid.videoId below
+      if (!vid) return;
+      setWatched(vid.progress?.watchedSeconds || 0);
+      setStarred(vid.progress?.starred || false);
       // Load note for this video
       const nd = await notesAPI.get(vid.videoId);
       setNote(nd.note?.content || '');
@@ -261,7 +264,22 @@ export default function VideoPlayer() {
   };
 
   /* ── Render ───────────────────────────────────────────────────────── */
-  if (loading || !curVid) return <Spinner pad={100} />;
+  if (loading) return <Spinner pad={100} />;
+
+  // Loaded but no playable video — the course is empty (stale link)
+  if (!curVid) {
+    return (
+      <div className="page-wrapper fade-up" style={{ paddingTop: 80 }}>
+        <EmptyState
+          icon="🎬"
+          title="No videos in this course"
+          sub="This course has no videos to play — they may have been removed."
+          action="Back to course"
+          onAction={() => navigate(`/courses/${courseId}`)}
+        />
+      </div>
+    );
+  }
 
   const idx = videos.findIndex((v) => v.videoId === curVid.videoId);
   const prev = idx > 0 ? videos[idx - 1] : null;

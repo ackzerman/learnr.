@@ -11,6 +11,16 @@ const {
   fetchVideoDurations,
 } = require("../utils/youtubeHelpers");
 
+// Normalize a tags payload: trim, uppercase, cap length/count, drop empties
+// and duplicates (dedupe happens after normalization so "math" ≡ "MATH")
+const sanitizeTags = (tags) => [
+  ...new Set(
+    (Array.isArray(tags) ? tags : [])
+      .map((t) => String(t).trim().toUpperCase().slice(0, 50))
+      .filter(Boolean)
+  ),
+].slice(0, 20);
+
 // ─── Create Manual Course ─────────────────────────────────────────────────────
 
 /**
@@ -46,8 +56,7 @@ const createManualCourse = async (req, res, next) => {
       userId,
       title:        title.trim(),
       source:       "manual",
-      // Sanitize tags — trim, lowercase, limit length and count
-      tags: (Array.isArray(tags) ? tags : []).slice(0, 20).map(t => String(t).trim().toUpperCase().slice(0, 50)).filter(Boolean),
+      tags:         sanitizeTags(tags),
       totalVideos,
       totalDuration,
     });
@@ -85,13 +94,37 @@ const getCourses = async (req, res, next) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
     const skip  = (page - 1) * limit;
 
-    // Run count and fetch in parallel for efficiency
-    const [total, courses] = await Promise.all([
-      Course.countDocuments({ userId }),
+    // Build match filter — optional tag filter (comma-separated, course must
+    // have ALL of them) and optional title search
+    const match = { userId: userObjId };
+    if (req.query.tags) {
+      const tagList = String(req.query.tags)
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+      if (tagList.length > 0) {
+        // Case-insensitive exact match per tag so legacy mixed-case data
+        // (pre-normalization) still matches
+        match.tags = {
+          $all: tagList.map(
+            (t) => new RegExp(`^${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i")
+          ),
+        };
+      }
+    }
+    if (req.query.search && String(req.query.search).trim()) {
+      // Escape regex special chars for a safe case-insensitive substring match
+      const escaped = String(req.query.search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      match.title = { $regex: escaped, $options: "i" };
+    }
+
+    // Run count, fetch, and distinct-tags in parallel for efficiency
+    const [total, courses, allTags] = await Promise.all([
+      Course.countDocuments(match),
 
             // Aggregation: join videos + completed progress to compute per-course stats
       Course.aggregate([
-        { $match: { userId: userObjId } },
+        { $match: match },
         { $sort:  { createdAt: -1 } },
         { $skip:  skip },
         { $limit: limit },
@@ -163,13 +196,20 @@ const getCourses = async (req, res, next) => {
             },
           },
         },
-      ])
+      ]),
+
+      // All distinct tags across the user's courses (unfiltered) so the
+      // filter bar always shows every tag, not just those on this page
+      Course.distinct("tags", { userId: userObjId }),
     ]);
 
     const totalPages = Math.ceil(total / limit);
 
     res.status(200).json({
       courses,
+      // Dedupe case-insensitively so legacy mixed-case tags ("math"/"MATH")
+      // yield a single filter entry
+      allTags: [...new Set(allTags.map((t) => String(t).toUpperCase()))].sort(),
       pagination: {
         total,
         page,
@@ -253,8 +293,7 @@ const updateCourse = async (req, res, next) => {
       if (!Array.isArray(tags)) {
         return next(new AppError("Tags must be an array.", 400));
       }
-      // Sanitize tags — trim, lowercase, limit length and count
-      course.tags = tags.slice(0, 20).map(t => String(t).trim().toUpperCase().slice(0, 50)).filter(Boolean);
+      course.tags = sanitizeTags(tags);
     }
 
     await course.save();
@@ -484,8 +523,7 @@ const importYoutubeCourse = async (req, res, next) => {
       source:       "youtube",
       playlistUrl,
       thumbnailUrl: items[0]?.thumbnailUrl || null,
-      // Sanitize tags — trim, lowercase, limit length and count
-      tags: (Array.isArray(tags) ? tags : []).slice(0, 20).map(t => String(t).trim().toUpperCase().slice(0, 50)).filter(Boolean),
+      tags:         sanitizeTags(tags),
       totalVideos,
       totalDuration,
     });
@@ -626,9 +664,20 @@ const reorderVideos = async (req, res, next) => {
 
     const videos = await Video.find({ courseId: id });
     const existingVideoIds = videos.map(v => v._id.toString());
-    
+
     if (videoIds.length !== existingVideoIds.length) {
       return next(new AppError("Provided videoIds array length does not match the course's video count.", 400));
+    }
+
+    // The provided IDs must be exactly the course's videos — a set-equality
+    // check rejects duplicates and foreign IDs, which would otherwise leave
+    // duplicate or missing orderIndex values
+    const providedSet = new Set(videoIds.map(String));
+    if (
+      providedSet.size !== existingVideoIds.length ||
+      !existingVideoIds.every((vid) => providedSet.has(vid))
+    ) {
+      return next(new AppError("videoIds must contain each of the course's video IDs exactly once.", 400));
     }
 
     const bulkOps = videoIds.map((vid, index) => ({
@@ -667,17 +716,29 @@ const updateVideo = async (req, res, next) => {
     const video = await Video.findOne({ _id: videoId, courseId });
     if (!video) return next(new AppError("Video not found.", 404));
 
-    if (title !== undefined) video.title = title.trim();
-    
+    if (title !== undefined) {
+      if (typeof title !== "string" || !title.trim()) {
+        return next(new AppError("Title must be a non-empty string.", 400));
+      }
+      video.title = title.trim();
+    }
+
     // If duration changes, we must update the course's totalDuration
-    if (duration !== undefined && typeof duration === "number" && duration > 0) {
-      const durationDiff = duration - video.duration;
+    const durationChanged =
+      duration !== undefined && typeof duration === "number" && duration > 0;
+    const durationDiff = durationChanged ? duration - video.duration : 0;
+    if (durationChanged) {
       video.duration = duration;
+    }
+
+    // Save the video first — if its validation fails, the course total is
+    // never touched and can't be left inflated by a rejected update
+    await video.save();
+
+    if (durationChanged) {
       course.totalDuration = Math.max(0, course.totalDuration + durationDiff);
       await course.save();
     }
-
-    await video.save();
 
     res.status(200).json({ message: "Video updated successfully", video });
   } catch (err) {
@@ -711,7 +772,10 @@ const searchVideos = async (req, res, next) => {
       courseMap[c._id.toString()] = c.title;
     });
 
-    const regex = new RegExp(q.trim(), "i");
+    // Escape regex special chars — raw input like "(" would throw, and
+    // crafted patterns could cause catastrophic backtracking (ReDoS)
+    const escaped = q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escaped, "i");
 
     // 2. Find courses that match the query
     const matchingCourseIds = courses

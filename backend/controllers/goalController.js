@@ -91,6 +91,10 @@ const saveGoal = async (req, res, next) => {
       return next(new AppError("Type must be 'daily' or 'weekly'.", 400));
     }
 
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return next(new AppError("Date must be in YYYY-MM-DD format.", 400));
+    }
+
     const safeDesc = typeof description === "string"
       ? description.trim().slice(0, 500)
       : "";
@@ -105,6 +109,31 @@ const saveGoal = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+// ─── Helper: Sync Completion State ───────────────────────────────────────────
+
+/**
+ * Make the GoalCompletion record for a date mirror the goal's actual state,
+ * then recalculate the streak. Handles both directions: records a completion
+ * when all tasks are done, and removes a stale one when they no longer are
+ * (task un-toggled, new task added, etc.).
+ *
+ * @param {string} userId
+ * @param {string} date     YYYY-MM-DD
+ * @param {boolean} allDone
+ */
+const _syncCompletion = async (userId, date, allDone) => {
+  if (allDone) {
+    await GoalCompletion.findOneAndUpdate(
+      { userId, date },
+      { userId, date },
+      { upsert: true }
+    );
+  } else {
+    await GoalCompletion.deleteOne({ userId, date });
+  }
+  await _recalculateStreak(userId);
 };
 
 // ─── Add Task ─────────────────────────────────────────────────────────────────
@@ -144,14 +173,18 @@ const addTask = async (req, res, next) => {
     }
 
     const newTask = { text: safeText, done: false };
-    if (videoId && courseId) {
-      newTask.videoId = videoId;
-      newTask.courseId = courseId;
-    }
+    // A task may link to a whole course (courseId only) or a specific
+    // video within it (both IDs) - persist whatever was provided
+    if (courseId) newTask.courseId = courseId;
+    if (videoId && courseId) newTask.videoId = videoId;
 
     goal.tasks.push(newTask);
     goal.completed = false;
     await goal.save();
+
+    // A new (not-done) task means the day is no longer complete — remove any
+    // stale GoalCompletion and recalculate the streak
+    await _syncCompletion(userId, today, false);
 
     res.status(201).json({ goal });
   } catch (err) {
@@ -192,17 +225,9 @@ const toggleTask = async (req, res, next) => {
     goal.completed = allDone;
     await goal.save();
 
-    // If all tasks just became done, record a GoalCompletion for streak
-    if (allDone) {
-      await GoalCompletion.findOneAndUpdate(
-        { userId, date },
-        { userId, date },
-        { upsert: true }
-      );
-
-      // Recalculate streak from GoalCompletion records
-      await _recalculateStreak(userId);
-    }
+    // Mirror the completion state either way: record it when the day is done,
+    // remove it when a task was un-toggled — then recalculate the streak
+    await _syncCompletion(userId, date, allDone);
 
     res.status(200).json({ goal, allCompleted: allDone });
   } catch (err) {
@@ -239,6 +264,10 @@ const deleteTask = async (req, res, next) => {
     const allDone = goal.tasks.length > 0 && goal.tasks.every((t) => t.done);
     goal.completed = allDone;
     await goal.save();
+
+    // Deleting a task can flip the day either way (last undone task removed →
+    // complete; last task removed → not complete) — sync and recalculate
+    await _syncCompletion(userId, date, allDone);
 
     res.status(200).json({ goal });
   } catch (err) {
@@ -302,7 +331,7 @@ const _recalculateStreak = async (userId) => {
     .lean();
 
   if (completions.length === 0) {
-    await User.findByIdAndUpdate(userId, { streak: 0, lastActiveDate: new Date() });
+    await User.findByIdAndUpdate(userId, { streak: 0, maxStreak: 0, lastActiveDate: new Date() });
     return;
   }
 
@@ -332,12 +361,27 @@ const _recalculateStreak = async (userId) => {
     }
   }
 
+  // Recompute max streak from the records themselves (longest consecutive
+  // run), so a rolled-back completion doesn't leave an inflated max behind.
+  // completions are sorted date-descending; walk them counting runs.
+  let maxStreak = 0;
+  let run = 0;
+  let prev = null;
+  for (const { date } of completions) {
+    if (prev !== null) {
+      const gap = (new Date(prev) - new Date(date)) / 86400000;
+      run = gap === 1 ? run + 1 : 1;
+    } else {
+      run = 1;
+    }
+    if (run > maxStreak) maxStreak = run;
+    prev = date;
+  }
+
   const user = await User.findById(userId);
   user.streak = streak;
+  user.maxStreak = maxStreak;
   user.lastActiveDate = new Date();
-  if (streak > (user.maxStreak ?? 0)) {
-    user.maxStreak = streak;
-  }
   await user.save();
 };
 
@@ -407,10 +451,10 @@ const addWeeklyTask = async (req, res, next) => {
     }
 
     const newTask = { text: safeText, done: false };
-    if (videoId && courseId) {
-      newTask.videoId = videoId;
-      newTask.courseId = courseId;
-    }
+    // A task may link to a whole course (courseId only) or a specific
+    // video within it (both IDs) - persist whatever was provided
+    if (courseId) newTask.courseId = courseId;
+    if (videoId && courseId) newTask.videoId = videoId;
 
     goal.tasks.push(newTask);
     goal.completed = false;

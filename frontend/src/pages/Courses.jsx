@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { coursesAPI } from '../api';
-import { fmt, parseTags, ytThumb } from '../utils';
+import { fmt, parseTags, ytThumb, ytVideoId } from '../utils';
 import { Spinner, ErrBox, ProgressBar, Modal, LabelInput, CourseBadge, EmptyState } from '../components/UI';
 import { useToast } from '../hooks/useToast';
 
@@ -202,25 +202,28 @@ export default function Courses() {
   const [tab, setTab]               = useState('youtube');
   const [filterTags, setFilterTags] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [allTags, setAllTags]       = useState([]);
 
-  const load = useCallback(async (pg = 1) => {
+  const load = useCallback(async (pg = 1, tags = filterTags, search = searchQuery) => {
     setLoading(true);
     try {
-      const d = await coursesAPI.list(pg, 12);
+      const d = await coursesAPI.list(pg, 12, { tags, search });
       setCourses(d.courses);
       setPagination(d.pagination);
+      if (d.allTags) setAllTags(d.allTags);
     } catch (e) { toast(e.message, 'error'); }
     finally { setLoading(false); }
-  }, []);
+  }, [filterTags, searchQuery]);
 
   useEffect(() => { load(1); }, []);
 
-  // Collect all unique tags from loaded courses
-  const allTags = useMemo(() => {
-    const set = new Set();
-    courses.forEach((c) => (c.tags || []).forEach((t) => set.add(t)));
-    return [...set].sort();
-  }, [courses]);
+  // Re-fetch from the server when filters change (search is debounced)
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    const t = setTimeout(() => load(1, filterTags, searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [filterTags, searchQuery]);
 
   // Toggle a tag in the active filter list
   const toggleTag = useCallback((tag) => {
@@ -228,23 +231,6 @@ export default function Courses() {
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
   }, []);
-
-  // Filter courses based on active tag filters and search query
-  const filteredCourses = useMemo(() => {
-    let result = courses;
-    if (filterTags.length > 0) {
-      result = result.filter((c) =>
-        filterTags.every((ft) => (c.tags || []).includes(ft))
-      );
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      result = result.filter((c) =>
-        c.title.toLowerCase().includes(q)
-      );
-    }
-    return result;
-  }, [courses, filterTags, searchQuery]);
 
   return (
     <div className="page-wrapper fade-up">
@@ -278,7 +264,7 @@ export default function Courses() {
       </section>
 
       {/* Filter Bar — Stitch-accurate rectangular buttons */}
-      {!loading && courses.length > 0 && (
+      {allTags.length > 0 && (
         <section style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 24, overflowX: 'auto', paddingBottom: 8 }}>
           {/* "All" button — always first */}
           <button
@@ -326,35 +312,37 @@ export default function Courses() {
       )}
 
       {/* Filtered count indicator */}
-      {(filterTags.length > 0 || searchQuery.trim()) && (
+      {(filterTags.length > 0 || searchQuery.trim()) && !loading && (
         <p style={{ color: '#747879', fontSize: 13, marginBottom: 12, fontFamily: "'Public Sans', sans-serif" }}>
-          Showing {filteredCourses.length} of {courses.length} course{courses.length !== 1 ? 's' : ''}
+          Showing {pagination.total} matching course{pagination.total !== 1 ? 's' : ''}
         </p>
       )}
 
       {loading ? (
         <Spinner pad={80} />
       ) : courses.length === 0 ? (
-        <EmptyState
-          icon="📚"
-          title="No courses yet"
-          sub="Import a YouTube playlist or build a course manually."
-          action="Add your first course"
-          onAction={() => setShowModal(true)}
-        />
-      ) : filteredCourses.length === 0 ? (
-        <EmptyState
-          icon="🔍"
-          title="No matching courses"
-          sub={`No courses match the selected tag${filterTags.length > 1 ? 's' : ''}.`}
-          action="Clear filters"
-          onAction={() => setFilterTags([])}
-        />
+        (filterTags.length > 0 || searchQuery.trim()) ? (
+          <EmptyState
+            icon="🔍"
+            title="No matching courses"
+            sub={`No courses match the selected filter${filterTags.length > 1 ? 's' : ''}.`}
+            action="Clear filters"
+            onAction={() => { setFilterTags([]); setSearchQuery(''); }}
+          />
+        ) : (
+          <EmptyState
+            icon="📚"
+            title="No courses yet"
+            sub="Import a YouTube playlist or build a course manually."
+            action="Add your first course"
+            onAction={() => setShowModal(true)}
+          />
+        )
       ) : (
         <>
           {/* Course Grid — with thick top border divider matching Stitch screen */}
           <div className="grid-3" style={{ borderTop: '4px solid #181f21', paddingTop: 24 }}>
-            {filteredCourses.map((c) => (
+            {courses.map((c) => (
               <CourseCard key={c._id} course={c} onClick={() => navigate(`/courses/${c._id}`)} />
             ))}
           </div>

@@ -1,7 +1,7 @@
 const express = require("express");
 const router  = express.Router();
 
-const { getHeatmap, getSummary } = require("../controllers/analyticsController");
+const { getHeatmap, getHeatmapYears, getSummary } = require("../controllers/analyticsController");
 const { protect }                = require("../middleware/authMiddleware");
 
 /**
@@ -13,7 +13,10 @@ const { protect }                = require("../middleware/authMiddleware");
 // Apply protect to every route in this file
 router.use(protect);
 
-// @route  GET /api/analytics/heatmap?range=30d|90d|year|all
+// @route  GET /api/analytics/heatmap/years
+router.get("/heatmap/years", getHeatmapYears);
+
+// @route  GET /api/analytics/heatmap?range=30d|90d|year|all&year=YYYY
 router.get("/heatmap", getHeatmap);
 
 // @route  GET /api/analytics/summary

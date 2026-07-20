@@ -1,12 +1,26 @@
 const mongoose      = require("mongoose");
 const DailyActivity = require("../models/DailyActivity");
 const AppError      = require("../utils/AppError");
+const { getTodayString, toDateString } = require("../utils/dateHelpers");
+
+/**
+ * Parse a "YYYY-MM-DD" string into a local-time Date at midnight.
+ * (new Date("YYYY-MM-DD") parses as UTC, which shifts the day in
+ * behind-UTC timezones — this keeps everything in local time, matching
+ * how DailyActivity.date keys are written.)
+ */
+const _parseLocalDate = (s) => {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
 
 // ─── Heatmap ──────────────────────────────────────────────────────────────────
 
 /**
- * @route   GET /api/analytics/heatmap?range=30d|90d|year|all
+ * @route   GET /api/analytics/heatmap?range=30d|90d|year|all&year=YYYY
  * @desc    Return per-day activity counts for the requested date range.
+ *          If `year` query param is provided, returns data for that specific
+ *          calendar year (Jan 1 – Dec 31, capped at today for current year).
  *          Gaps (days with no activity) are filled with count: 0 so the
  *          frontend heatmap always receives a complete, contiguous window.
  * @access  Protected
@@ -14,35 +28,98 @@ const AppError      = require("../utils/AppError");
 const getHeatmap = async (req, res, next) => {
   try {
     const userObjId = new mongoose.Types.ObjectId(req.userId);
-    const { range = "30d" } = req.query;
+    const { range = "30d", year } = req.query;
 
-    // ── 1. Resolve the start date for the requested range ─────────────────────
+    // Local-time "today" string — DailyActivity.date keys are local dates
+    const todayStr = getTodayString();
+    const currentYear = parseInt(todayStr.slice(0, 4), 10);
 
-    const today     = new Date();
-    const startDate = _resolveStartDate(range, today);
+    let startDate, endDate;
+
+    // ── Year-specific mode ────────────────────────────────────────────────────
+    if (year) {
+      const yr = parseInt(year, 10);
+      if (isNaN(yr) || yr < 2000 || yr > currentYear) {
+        return next(new AppError('Invalid year parameter.', 400));
+      }
+
+      startDate = `${yr}-01-01`;
+      // For current year, cap at today; for past years, go to Dec 31
+      endDate = yr === currentYear ? todayStr : `${yr}-12-31`;
+
+      const matchStage = {
+        userId: userObjId,
+        date: { $gte: startDate, $lte: endDate },
+      };
+
+      const records = await DailyActivity.find(matchStage)
+        .select("date videosWatchedCount totalWatchSeconds")
+        .sort({ date: 1 });
+
+      const heatmap = _fillDateGaps(records, startDate, endDate);
+
+      return res.status(200).json({ year: yr, heatmap });
+    }
+
+    // ── Range-based mode (original behavior) ──────────────────────────────────
+    startDate = _resolveStartDate(range, todayStr);
+    endDate = todayStr;
 
     if (startDate === undefined) {
       return next(new AppError('Invalid range. Use: 30d | 90d | year | all', 400));
     }
 
-    // ── 2. Fetch only the records that fall inside the window ─────────────────
-
     const matchStage = { userId: userObjId };
 
     // "all" has no lower bound — fetch the user's entire history
     if (range !== "all") {
-      matchStage.date = { $gte: startDate.toISOString().slice(0, 10) };
+      matchStage.date = { $gte: startDate };
     }
 
     const records = await DailyActivity.find(matchStage)
       .select("date videosWatchedCount totalWatchSeconds")
       .sort({ date: 1 });
 
-    // ── 3. Build a complete day-by-day window and merge with DB records ────────
-
-    const heatmap = _fillDateGaps(records, startDate, today);
+    const heatmap = _fillDateGaps(records, startDate, endDate);
 
     res.status(200).json({ range, heatmap });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @route   GET /api/analytics/heatmap/years
+ * @desc    Return all distinct years the user has activity data.
+ *          Always includes the current year.
+ * @access  Protected
+ */
+const getHeatmapYears = async (req, res, next) => {
+  try {
+    const userObjId = new mongoose.Types.ObjectId(req.userId);
+
+    const result = await DailyActivity.aggregate([
+      { $match: { userId: userObjId } },
+      {
+        $group: {
+          _id: { $substr: ["$date", 0, 4] }, // extract "YYYY"
+        },
+      },
+      { $sort: { _id: -1 } },  // newest first
+    ]);
+
+    const years = result.map((r) => parseInt(r._id, 10));
+
+    // Ensure current year is always included (local time — matches date keys)
+    const currentYear = parseInt(getTodayString().slice(0, 4), 10);
+    if (!years.includes(currentYear)) {
+      years.unshift(currentYear);
+    }
+
+    // Sort descending
+    years.sort((a, b) => b - a);
+
+    res.status(200).json({ years });
   } catch (err) {
     next(err);
   }
@@ -119,22 +196,21 @@ const _getDailyBreakdown = async (userObjId) => {
 
   //Walk day-by-day from the earliest record to today, filling any gaps with zeros
 
-  const result  = [];
-  const cursor  = new Date(records[0].date);
-  const today   = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  cursor.setUTCHours(0, 0, 0, 0);
- 
-  while (cursor <= today) {
-    const dateStr = cursor.toISOString().slice(0, 10);
+  const result   = [];
+  const cursor   = _parseLocalDate(records[0].date);
+  const todayStr = getTodayString();
+
+  let dateStr = toDateString(cursor);
+  while (dateStr <= todayStr) {
     result.push({
       date:          dateStr,
       videosWatched: recordMap[dateStr]?.videosWatched ?? 0,
       totalSeconds:  recordMap[dateStr]?.totalSeconds  ?? 0,
     });
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    cursor.setDate(cursor.getDate() + 1);
+    dateStr = toDateString(cursor);
   }
- 
+
   return result;
 };
 
@@ -246,26 +322,24 @@ const _getYearlyBreakdown = async (userObjId) => {
 // ─── Utility: Resolve Range Start Date ───────────────────────────────────────
 
 /**
- * Maps a range string to a UTC start Date, or null for "all".
+ * Maps a range string to a local "YYYY-MM-DD" start date, or null for "all".
  *
- * @param   {string} range  "30d" | "90d" | "year" | "all"
- * @param   {Date}   today
- * @returns {Date|null}
+ * @param   {string} range     "30d" | "90d" | "year" | "all"
+ * @param   {string} todayStr  local "YYYY-MM-DD"
+ * @returns {string|null|undefined}
  */
-const _resolveStartDate = (range, today) => {
-  const d = new Date(today);
-  d.setUTCHours(0, 0, 0, 0);
+const _resolveStartDate = (range, todayStr) => {
+  const d = _parseLocalDate(todayStr);
 
   switch (range) {
     case "30d":
-      d.setUTCDate(d.getUTCDate() - 29);   // today + 29 previous days = 30 days total
-      return d;
+      d.setDate(d.getDate() - 29);   // today + 29 previous days = 30 days total
+      return toDateString(d);
     case "90d":
-      d.setUTCDate(d.getUTCDate() - 89);
-      return d;
+      d.setDate(d.getDate() - 89);
+      return toDateString(d);
     case "year":
-      d.setUTCMonth(0, 1);                  // Jan 1 of the current year
-      return d;
+      return `${todayStr.slice(0, 4)}-01-01`; // Jan 1 of the current year
     case "all":
       return null;                          // no lower bound — caller handles this
     default:
@@ -278,13 +352,14 @@ const _resolveStartDate = (range, today) => {
 /**
  * Merges DB records with a complete day-by-day calendar window.
  * Any date missing from DB records is filled in with zeroed counts.
+ * All dates are local "YYYY-MM-DD" strings, matching DailyActivity.date keys.
  *
- * @param   {object[]} records   — DailyActivity documents from DB
- * @param   {Date}     startDate — inclusive start (null = use earliest record)
- * @param   {Date}     today     — inclusive end
+ * @param   {object[]}    records   — DailyActivity documents from DB
+ * @param   {string|null} startDate — inclusive start (null = use earliest record)
+ * @param   {string}      endDate   — inclusive end
  * @returns {{ date: string, count: number, totalSeconds: number }[]}
  */
-const _fillDateGaps = (records, startDate, today) => {
+const _fillDateGaps = (records, startDate, endDate) => {
   // Build O(1) lookup map from DB records
   // Ensure any day with watch activity shows at least count=1,
   // even when videosWatchedCount is 0 (user continued a previously-started video).
@@ -300,26 +375,24 @@ const _fillDateGaps = (records, startDate, today) => {
   // For "all" range — use the earliest record date as the window start
   const windowStart =
     startDate ??
-    (records.length > 0 ? new Date(records[0].date) : today);
+    (records.length > 0 ? records[0].date : endDate);
 
-  // Walk day-by-day from start → today and fill in every date
-  const result  = [];
-  const cursor  = new Date(windowStart);
-  const endDate = new Date(today);
-  endDate.setUTCHours(0, 0, 0, 0);
-  cursor.setUTCHours(0, 0, 0, 0);
+  // Walk day-by-day from start → endDate and fill in every date
+  const result = [];
+  const cursor = _parseLocalDate(windowStart);
 
-  while (cursor <= endDate) {
-    const dateStr = cursor.toISOString().slice(0, 10);
+  let dateStr = toDateString(cursor);
+  while (dateStr <= endDate) {
     result.push({
       date:         dateStr,
       count:        recordMap[dateStr]?.count        ?? 0,
       totalSeconds: recordMap[dateStr]?.totalSeconds ?? 0,
     });
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    cursor.setDate(cursor.getDate() + 1);
+    dateStr = toDateString(cursor);
   }
 
   return result;
 };
 
-module.exports = { getHeatmap, getSummary };
+module.exports = { getHeatmap, getHeatmapYears, getSummary };

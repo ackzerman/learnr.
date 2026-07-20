@@ -4,7 +4,7 @@ const Course       = require("../models/Course");
 const Video        = require("../models/Video");
 const Progress     = require("../models/Progress");
 const DailyActivity = require("../models/DailyActivity");
-const { getTodayString } = require("../utils/dateHelpers");
+const { getTodayString, toDateString } = require("../utils/dateHelpers");
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
@@ -116,13 +116,15 @@ const _getStats = async (userObjId) => {
  * @returns {Promise<{ date: string, count: number }[]>}
  */
 const _getHeatmap = async (userObjId) => {
-  // Build the 91-day (13-week) date window (inclusive of today)
+  // Build the 91-day (13-week) date window (inclusive of today).
+  // Local date strings — DailyActivity.date keys are written in local time,
+  // so a UTC window would miss today's activity in ahead-of-UTC timezones.
   const totalDays = 91;
   const dates = [];
   for (let i = totalDays - 1; i >= 0; i--) {
     const d = new Date();
-    d.setUTCDate(d.getUTCDate() - i);
-    dates.push(d.toISOString().slice(0, 10)); // "YYYY-MM-DD"
+    d.setDate(d.getDate() - i);
+    dates.push(toDateString(d)); // "YYYY-MM-DD"
   }
 
   const startDate = dates[0];
@@ -134,21 +136,23 @@ const _getHeatmap = async (userObjId) => {
     date:   { $gte: startDate, $lte: endDate },
   }).select("date videosWatchedCount totalWatchSeconds");
 
-  // Build a lookup map for O(1) access: { "2024-07-15": 3, ... }
+  // Build a lookup map for O(1) access
   // Use max(videosWatchedCount, 1) whenever there is any watch activity,
   // so continuing a previously-started video still lights up the heatmap.
   const recordMap = {};
   for (const r of records) {
     const hasActivity = r.totalWatchSeconds > 0 || r.videosWatchedCount > 0;
-    recordMap[r.date] = hasActivity
-      ? Math.max(r.videosWatchedCount, 1)
-      : 0;
+    recordMap[r.date] = {
+      count:        hasActivity ? Math.max(r.videosWatchedCount, 1) : 0,
+      totalSeconds: r.totalWatchSeconds || 0,
+    };
   }
 
-  // Merge with the full date window — missing dates get count: 0
+  // Merge with the full date window — missing dates get zeroed counts
   return dates.map((date) => ({
     date,
-    count: recordMap[date] ?? 0,
+    count:        recordMap[date]?.count        ?? 0,
+    totalSeconds: recordMap[date]?.totalSeconds ?? 0,
   }));
 };
 

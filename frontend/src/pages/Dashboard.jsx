@@ -68,7 +68,7 @@ export default function Dashboard() {
     <div className="page-wrapper fade-up" style={{ paddingTop: 24, paddingBottom: 80 }}>
 
       {/* ── Hero Section — 50/50 Split ──────────────────────────────── */}
-      <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 48 }}>
+      <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 24, marginBottom: 48 }}>
 
         {/* Left Column: Welcome + Dive Back In */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -224,12 +224,22 @@ export default function Dashboard() {
 
             {/* Single next task */}
             {nextTask ? (
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: 10, background: '#ffffff', border: '2px solid #181f21',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className="label-caps" style={{ color: '#181f21', opacity: 0.4, fontSize: 10 }}>
+              <div
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: 10, background: '#ffffff', border: '2px solid #181f21',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (nextTask.videoId && nextTask.courseId) {
+                    navigate(`/courses/${nextTask.courseId}/watch/${nextTask.videoId}`);
+                  } else {
+                    navigate('/plan');
+                  }
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                  <span className="label-caps" style={{ color: '#181f21', opacity: 0.4, fontSize: 10, flexShrink: 0 }}>
                     {String(completedTasks + 1).padStart(2, '0')}
                   </span>
                   <span style={{
@@ -238,7 +248,9 @@ export default function Dashboard() {
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>{nextTask.text}</span>
                 </div>
-                <span className="material-symbols-outlined" style={{ color: '#181f21', fontSize: 18 }}>chevron_right</span>
+                <span className="material-symbols-outlined" style={{ color: '#181f21', fontSize: 18, flexShrink: 0, marginLeft: 10 }}>
+                  {nextTask.videoId && nextTask.courseId ? 'play_circle' : 'chevron_right'}
+                </span>
               </div>
             ) : totalTasks > 0 ? (
               <div style={{

@@ -1,7 +1,20 @@
 const mongoose = require("mongoose");
 const Note     = require("../models/Note");
 const Video    = require("../models/Video");
+const Course   = require("../models/Course");
 const AppError = require("../utils/AppError");
+
+/**
+ * True when the video exists and its course belongs to the given user.
+ * Notes are per-user but anchored to videos — without this check any
+ * authenticated user could create notes against another user's videos.
+ */
+const _userOwnsVideo = async (videoId, userId) => {
+  const video = await Video.findById(videoId).select("courseId").lean();
+  if (!video) return false;
+  const course = await Course.findById(video.courseId).select("userId").lean();
+  return !!course && course.userId.toString() === userId.toString();
+};
 
 // ─── Save Note (Create or Update) ────────────────────────────────────────────
 
@@ -37,11 +50,10 @@ const saveNote = async (req, res, next) => {
       return next(new AppError("content is required (empty string is acceptable).", 400));
     }
 
-    // ── 2. Confirm the video actually exists ──────────────────────────────────
-    // Prevents orphan notes being created for non-existent videos.
+    // ── 2. Confirm the video exists and belongs to this user ──────────────────
+    // Prevents orphan notes and notes against other users' videos.
 
-    const videoExists = await Video.exists({ _id: videoId });
-    if (!videoExists) {
+    if (!(await _userOwnsVideo(videoId, userId))) {
       return next(new AppError("Video not found.", 404));
     }
 

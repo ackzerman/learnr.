@@ -29,54 +29,222 @@ export function ProgressBar({ value, color = '#536348', height = 4 }) {
   );
 }
 
-/* ─── Heatmap — sage-based color scale ─────────────────────────────────────── */
-const heatColor = (c) => {
-  if (c === 0) return '#efeee3';
-  if (c === 1) return '#d0e3c1';
-  if (c <= 3)  return '#a8ba9a';
-  if (c <= 6)  return '#7a9a68';
+/* ─── Heatmap — sage-based color scale (by hours watched) ──────────────────── */
+const heatColor = (hours) => {
+  if (hours === 0)  return '#efeee3';
+  if (hours < 0.5)  return '#d0e3c1';
+  if (hours < 1)    return '#a8ba9a';
+  if (hours < 2)    return '#7a9a68';
   return '#536348';
 };
 
-export function Heatmap({ data = [], weeks = 13 }) {
+export function Heatmap({ data = [], weeks = 13, mode = 'rolling', year }) {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const map = {};
-  data.forEach((d) => { map[d.date] = d.count ?? d.videosWatched ?? 0; });
+  data.forEach((d) => {
+    const secs = d.totalSeconds ?? 0;
+    map[d.date] = secs / 3600;
+  });
 
-  const days = [];
   const today = new Date();
-  const total = weeks * 7;
-  for (let i = total - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setUTCDate(d.getUTCDate() - i);
-    const k = d.toISOString().slice(0, 10);
-    days.push({ date: k, count: map[k] || 0 });
+  today.setUTCHours(0, 0, 0, 0);
+
+  let monthBlocks;
+
+  if (mode === 'year' && year) {
+    // ── Full calendar year mode (Jan–Dec) ──────────────────────────
+    const yr = year;
+    const isCurrentYear = yr === today.getUTCFullYear();
+
+    const monthKeys = [];
+    for (let m = 0; m < 12; m++) {
+      // For current year, only show months up to the current month
+      if (isCurrentYear && m > today.getUTCMonth()) break;
+      monthKeys.push({ year: yr, month: m });
+    }
+
+    monthBlocks = monthKeys.map(({ year: y, month }) => {
+      const daysInMonth = new Date(Date.UTC(y, month + 1, 0)).getUTCDate();
+      const cols = [];
+      let currentCol = new Array(7).fill(null);
+
+      const lastDay = (isCurrentYear && month === today.getUTCMonth())
+        ? today.getUTCDate()
+        : daysInMonth;
+
+      for (let day = 1; day <= lastDay; day++) {
+        const d = new Date(Date.UTC(y, month, day));
+        const dow = d.getUTCDay();
+        const k = d.toISOString().slice(0, 10);
+
+        if (dow === 0 && day > 1) {
+          cols.push(currentCol);
+          currentCol = new Array(7).fill(null);
+        }
+
+        currentCol[dow] = { date: k, hours: map[k] || 0 };
+      }
+      cols.push(currentCol);
+
+      return { year: y, month, cols };
+    });
+  } else {
+    // ── Rolling weeks mode (original behavior) ──────────────────────
+    const total = weeks * 7;
+    const startDate = new Date(today);
+    startDate.setUTCDate(startDate.getUTCDate() - (total - 1));
+
+    // Collect unique year-months in the range
+    const monthKeys = [];
+    const seen = new Set();
+    for (let i = 0; i < total; i++) {
+      const d = new Date(startDate);
+      d.setUTCDate(d.getUTCDate() + i);
+      const key = d.toISOString().slice(0, 7);
+      if (!seen.has(key)) {
+        seen.add(key);
+        monthKeys.push({ year: d.getUTCFullYear(), month: d.getUTCMonth() });
+      }
+    }
+
+    // Drop the first month if it duplicates the current month from a prior year
+    const curMonth = today.getUTCMonth();
+    const curYear = today.getUTCFullYear();
+    if (monthKeys.length > 1 && monthKeys[0].month === curMonth && monthKeys[0].year < curYear) {
+      monthKeys.shift();
+    }
+
+    monthBlocks = monthKeys.map(({ year: y, month }) => {
+      const daysInMonth = new Date(Date.UTC(y, month + 1, 0)).getUTCDate();
+      const cols = [];
+      let currentCol = new Array(7).fill(null);
+
+      const todayStr = today.toISOString().slice(0, 10);
+      const lastDay = (y === today.getUTCFullYear() && month === today.getUTCMonth())
+        ? today.getUTCDate()
+        : daysInMonth;
+
+      for (let day = 1; day <= lastDay; day++) {
+        const d = new Date(Date.UTC(y, month, day));
+        const dow = d.getUTCDay();
+        const k = d.toISOString().slice(0, 10);
+
+        if (dow === 0 && day > 1) {
+          cols.push(currentCol);
+          currentCol = new Array(7).fill(null);
+        }
+
+        currentCol[dow] = { date: k, hours: map[k] || 0 };
+      }
+      cols.push(currentCol);
+
+      return { year: y, month, cols };
+    });
   }
 
-  const cols = [];
-  for (let w = 0; w < weeks; w++) {
-    const wdays = days.slice(w * 7, w * 7 + 7);
-    cols.push(
-      <div key={w} className="heatmap-col">
-        {wdays.map((d) => (
-          <div
-            key={d.date}
-            className="heatmap-day"
-            title={`${d.date}: ${d.count} video${d.count !== 1 ? 's' : ''}`}
-            style={{ background: heatColor(d.count) }}
-          />
-        ))}
-      </div>
-    );
-  }
-  return <div className="heatmap-grid">{cols}</div>;
+  const CELL = 12;
+  const GAP = 3;
+
+  return (
+    <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
+      {monthBlocks.map((block, bi) => (
+        <div key={bi} style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+          {/* Month label */}
+          <span style={{
+            fontFamily: "'Space Mono', monospace", fontSize: 9, fontWeight: 700,
+            color: '#747879', letterSpacing: '0.05em', textTransform: 'uppercase',
+            textAlign: 'center',
+          }}>
+            {MONTHS[block.month]}
+          </span>
+          {/* Calendar grid — columns are weeks, rows are days of week (Sun–Sat) */}
+          <div style={{ display: 'flex', gap: GAP }}>
+            {block.cols.map((col, ci) => (
+              <div key={ci} style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
+                {col.map((cell, ri) => (
+                  cell ? (
+                    <div
+                      key={cell.date}
+                      className="heatmap-day"
+                      title={`${cell.date}: ${cell.hours >= 1 ? Math.floor(cell.hours) + 'h ' + Math.round((cell.hours % 1) * 60) + 'm' : Math.round(cell.hours * 60) + 'm'} watched`}
+                      style={{ background: heatColor(cell.hours) }}
+                    />
+                  ) : (
+                    <div key={ri} style={{ width: CELL, height: CELL, flexShrink: 0 }} />
+                  )
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function HeatmapYearSelector({ selectedYear, years = [], onChange }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ position: 'relative', userSelect: 'none' }}>
+      {/* Selected year button */}
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: '#efeee3', border: '2px solid #181f21', padding: '6px 14px',
+          fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700,
+          color: '#181f21', cursor: 'pointer', letterSpacing: '0.05em',
+          transition: 'all 0.15s',
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.background = '#d0e3c1'}
+        onMouseLeave={(e) => e.currentTarget.style.background = '#efeee3'}
+      >
+        {selectedYear}
+        <span className="material-symbols-outlined" style={{
+          fontSize: 16, transition: 'transform 0.2s',
+          transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+        }}>expand_more</span>
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, marginTop: 4,
+          background: '#ffffff', border: '2px solid #181f21',
+          boxShadow: '4px 4px 0px 0px #181f21', zIndex: 50,
+          minWidth: 100, animation: 'fadeIn 0.12s ease',
+        }}>
+          {years.map((yr) => (
+            <button
+              key={yr}
+              onClick={() => { onChange(yr); setOpen(false); }}
+              style={{
+                display: 'block', width: '100%', padding: '10px 16px',
+                background: yr === selectedYear ? '#d0e3c1' : 'transparent',
+                border: 'none', borderBottom: '1px solid #e4e3d7',
+                fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700,
+                color: '#181f21', cursor: 'pointer', textAlign: 'left',
+                letterSpacing: '0.05em', transition: 'background 0.12s',
+              }}
+              onMouseEnter={(e) => { if (yr !== selectedYear) e.currentTarget.style.background = '#f5f4e8'; }}
+              onMouseLeave={(e) => { if (yr !== selectedYear) e.currentTarget.style.background = 'transparent'; }}
+            >
+              {yr}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function HeatmapLegend() {
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
       <span className="label-caps" style={{ fontSize: 10, color: '#747879' }}>Less</span>
-      {[0, 1, 3, 5, 7].map((c) => (
-        <div key={c} className="heatmap-day" style={{ background: heatColor(c) }} />
+      {[0, 0.25, 0.75, 1.5, 3].map((h) => (
+        <div key={h} className="heatmap-day" style={{ background: heatColor(h) }} />
       ))}
       <span className="label-caps" style={{ fontSize: 10, color: '#747879' }}>More</span>
     </div>

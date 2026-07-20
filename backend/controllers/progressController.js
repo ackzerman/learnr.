@@ -1,8 +1,22 @@
 const Video        = require("../models/Video");
+const Course       = require("../models/Course");
 const Progress     = require("../models/Progress");
 const DailyActivity = require("../models/DailyActivity");
 const AppError     = require("../utils/AppError");
-const { getTodayString } = require("../utils/dateHelpers");
+const { getTodayString, toDateString } = require("../utils/dateHelpers");
+
+/**
+ * Load a video and verify its course belongs to the given user.
+ * Returns the video, or null if it doesn't exist / isn't the user's —
+ * callers respond 404 either way so foreign IDs aren't distinguishable.
+ */
+const _findOwnedVideo = async (videoId, userId) => {
+  const video = await Video.findById(videoId);
+  if (!video) return null;
+  const course = await Course.findById(video.courseId).select("userId").lean();
+  if (!course || course.userId.toString() !== userId.toString()) return null;
+  return video;
+};
 
 // ─── Update Video Progress ────────────────────────────────────────────────────
 
@@ -34,8 +48,9 @@ const updateProgress = async (req, res, next) => {
     }
 
     // ── 2. Load the video to know its full duration ───────────────────────────
+    // Ownership-checked: the video's course must belong to this user
 
-    const video = await Video.findById(videoId);
+    const video = await _findOwnedVideo(videoId, userId);
     if (!video) {
       return next(new AppError("Video not found.", 404));
     }
@@ -50,9 +65,12 @@ const updateProgress = async (req, res, next) => {
       progress = new Progress({ userId, videoId, watchedSeconds: 0, completed: false });
     }
 
-    // Capture original lastWatchedAt before we overwrite it (needed for DailyActivity logic)
+    // Capture original lastWatchedAt before we overwrite it (needed for DailyActivity logic).
+    // Local date string — must use the same convention as getTodayString, or
+    // evening sessions in non-UTC timezones count the video as "first watch"
+    // on every ping and inflate videosWatchedCount.
     const previousLastWatchedDate = !isNewProgress && progress.lastWatchedAt
-      ? new Date(progress.lastWatchedAt).toISOString().slice(0, 10)
+      ? toDateString(progress.lastWatchedAt)
       : null;
 
     // ── 4. Calculate the delta before updating ────────────────────────────────
@@ -71,7 +89,7 @@ const updateProgress = async (req, res, next) => {
     progress.lastWatchedAt  = new Date();
 
     // Mark complete when >= 90% of the video has been watched
-    const completionThreshold = video.duration * 0.99;
+    const completionThreshold = video.duration * 0.9;
     const justCompleted =
       !progress.completed && progress.watchedSeconds >= completionThreshold;
 
@@ -133,8 +151,8 @@ async function toggleStar(req, res, next) {
     const userId  = req.userId;
     const { videoId } = req.params;
  
-    // Validate the video exists
-    const video = await Video.findById(videoId);
+    // Validate the video exists and belongs to this user
+    const video = await _findOwnedVideo(videoId, userId);
     if (!video) {
       return next(new AppError("Video not found.", 404));
     }

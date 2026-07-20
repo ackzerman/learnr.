@@ -24,7 +24,12 @@ export const authAPI = {
 
 // ─── Courses ──────────────────────────────────────────────────────────────────
 export const coursesAPI = {
-  list:               (page = 1, limit = 12) => api.get(`/courses?page=${page}&limit=${limit}`),
+  list:               (page = 1, limit = 12, { tags = [], search = '' } = {}) => {
+    let q = `/courses?page=${page}&limit=${limit}`;
+    if (tags.length) q += `&tags=${encodeURIComponent(tags.join(','))}`;
+    if (search.trim()) q += `&search=${encodeURIComponent(search.trim())}`;
+    return api.get(q);
+  },
   getById:            (id)                   => api.get(`/courses/${id}`),
   getDetails:         (id)                   => api.get(`/courses/${id}/details`),
   createManual:       (body)                 => api.post('/courses/manual', body),
@@ -59,8 +64,10 @@ export const dashboardAPI = {
 
 // ─── Analytics ────────────────────────────────────────────────────────────────
 export const analyticsAPI = {
-  heatmap: (range = '30d') => api.get(`/analytics/heatmap?range=${range}`),
-  summary: ()              => api.get('/analytics/summary'),
+  heatmap:       (range = '30d') => api.get(`/analytics/heatmap?range=${range}`),
+  heatmapByYear: (year)          => api.get(`/analytics/heatmap?year=${year}`),
+  heatmapYears:  ()              => api.get('/analytics/heatmap/years'),
+  summary:       ()              => api.get('/analytics/summary'),
 };
 
 // ─── Goals (Plan Your Day) ────────────────────────────────────────────────────

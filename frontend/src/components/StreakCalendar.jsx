@@ -13,18 +13,20 @@ const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
  */
 export default function StreakCalendar({ streak, compact = false }) {
   const now = new Date();
-  const [viewYear, setViewYear] = useState(now.getUTCFullYear());
-  const [viewMonth, setViewMonth] = useState(now.getUTCMonth() + 1); // 1-indexed
+  // Local time throughout — goal completions are keyed by local date strings,
+  // so a UTC "today" would highlight the wrong cell in the evening/morning
+  const [viewYear, setViewYear] = useState(now.getFullYear());
+  const [viewMonth, setViewMonth] = useState(now.getMonth() + 1); // 1-indexed
   const [monthDays, setMonthDays] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   // Format month string for API: YYYY-MM
   const monthKey = `${viewYear}-${String(viewMonth).padStart(2, '0')}`;
 
   // Check if we're viewing the current month
-  const isCurrentMonth = viewYear === now.getUTCFullYear() && viewMonth === now.getUTCMonth() + 1;
+  const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth() + 1;
 
   // Load month data
   const loadMonth = useCallback(async (yr, mo) => {

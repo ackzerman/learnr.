@@ -147,7 +147,7 @@ export default function Profile() {
   };
 
   return (
-    <div className="page-wrapper fade-up">
+    <div className="page-wrapper fade-up" style={{ paddingTop: 24, paddingBottom: 80 }}>
       <div style={{
         display: 'grid',
         gridTemplateColumns: '3fr 9fr',
@@ -254,7 +254,7 @@ export default function Profile() {
         </div>
 
         {/* ═══════════════════ RIGHT MAIN COLUMN ═══════════════════ */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, minWidth: 0 }}>
 
           {/* ── Metric Cards Row ────────────────────────────────── */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
@@ -334,7 +334,7 @@ export default function Profile() {
                 fontSize: 24, fontWeight: 600, color: '#d6e8c6',
                 margin: 0, lineHeight: 1.3,
               }}>
-                {user.streak} Days{' '}
+                {user.maxStreak ?? user.streak} Days{' '}
                 <span style={{ color: '#959c9f', fontSize: 16, fontFamily: "'Public Sans', sans-serif", fontWeight: 400, opacity: 0.6 }}>// All-time</span>
               </p>
             </div>

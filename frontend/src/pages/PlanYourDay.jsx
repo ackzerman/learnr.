@@ -207,7 +207,7 @@ export default function PlanYourDay() {
       try {
         const [dateRes, courseRes, weeklyRes] = await Promise.all([
           goalsAPI.getByDate(selectedDate),
-          coursesAPI.list(1, 10),
+          coursesAPI.list(1, 50),
           goalsAPI.getWeekly(),
         ]);
         const g = dateRes.goal;
@@ -325,7 +325,7 @@ export default function PlanYourDay() {
     try {
       const payload = { text: newWeeklyTask.trim() };
       if (selectedWeeklyCourse && selectedWeeklyCourse.title === newWeeklyTask.trim()) {
-        payload.courseId = selectedWeeklyCourse.courseId;
+        payload.courseId = selectedWeeklyCourse._id;
       }
       const res = await goalsAPI.addWeeklyTask(payload);
       setWeeklyGoal(res.goal);
@@ -967,9 +967,11 @@ export default function PlanYourDay() {
                 ) : (
                   weeklyTasks.filter((t) => !t.done).map((t, i, activeTasks) => {
                     // Find matching course for progress bar
+                    // Try by courseId first, then fallback to name match
                     const matchedCourse = t.courseId
-                      ? courses.find((c) => c.courseId === t.courseId)
-                      : null;
+                      ? courses.find((c) => String(c._id) === String(t.courseId))
+                      : courses.find((c) => c.title === t.text) || null;
+                    const resolvedCourseId = t.courseId || (matchedCourse ? matchedCourse._id : null);
                     const courseProgress = matchedCourse && matchedCourse.totalVideos > 0
                       ? Math.round((matchedCourse.completedVideos / matchedCourse.totalVideos) * 100)
                       : null;
@@ -980,10 +982,21 @@ export default function PlanYourDay() {
                         style={{
                           padding: '14px 0',
                           borderBottom: i < activeTasks.length - 1 ? '1px solid #efeee3' : 'none',
+                          cursor: resolvedCourseId ? 'pointer' : 'default',
+                          transition: 'background 0.15s',
+                        }}
+                        onClick={() => {
+                          if (resolvedCourseId) navigate(`/courses/${resolvedCourseId}`);
+                        }}
+                        onMouseEnter={(e) => {
+                          if (resolvedCourseId) e.currentTarget.style.background = '#efeee3';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent';
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <div onClick={() => toggleWeeklyTask(t._id)} style={{ cursor: 'pointer', flexShrink: 0 }}>
+                          <div onClick={(e) => { e.stopPropagation(); toggleWeeklyTask(t._id); }} style={{ cursor: 'pointer', flexShrink: 0 }}>
                             <TaskCheckbox checked={false} onChange={() => {}} />
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
@@ -994,8 +1007,8 @@ export default function PlanYourDay() {
                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               }}
                             >
-                              {t.courseId ? (
-                                <Link to={`/courses/${t.courseId}`} style={{ color: 'inherit', textDecoration: 'inherit' }}>
+                              {resolvedCourseId ? (
+                                <Link to={`/courses/${resolvedCourseId}`} style={{ color: 'inherit', textDecoration: 'inherit' }}>
                                   {t.text} <span style={{ fontSize: 12, opacity: 0.7 }}>↗</span>
                                 </Link>
                               ) : t.text}
@@ -1010,7 +1023,7 @@ export default function PlanYourDay() {
                             </span>
                           </div>
                           <button
-                            onClick={() => deleteWeeklyTask(t._id)}
+                            onClick={(e) => { e.stopPropagation(); deleteWeeklyTask(t._id); }}
                             style={{
                               background: 'transparent', border: 'none', cursor: 'pointer',
                               color: '#ba1a1a', opacity: 0.3, transition: 'opacity 0.15s',
@@ -1087,13 +1100,31 @@ export default function PlanYourDay() {
                     </p>
                   </div>
                 ) : (
-                  weeklyTasks.filter((t) => t.done).map((t, i, arr) => (
+                  weeklyTasks.filter((t) => t.done).map((t, i, arr) => {
+                    const matchedDoneCourse = t.courseId
+                      ? courses.find((c) => String(c._id) === String(t.courseId))
+                      : courses.find((c) => c.title === t.text) || null;
+                    const doneCourseId = t.courseId || (matchedDoneCourse ? matchedDoneCourse._id : null);
+                    return (
                     <div
                       key={t._id}
                       style={{
                         borderBottom: i < arr.length - 1 ? '1px solid #41484a' : 'none',
                         paddingBottom: 12, marginBottom: 12,
                         display: 'flex', alignItems: 'flex-start', gap: 10,
+                        cursor: doneCourseId ? 'pointer' : 'default',
+                        transition: 'background 0.15s',
+                        padding: '8px 4px',
+                        borderRadius: 2,
+                      }}
+                      onClick={() => {
+                        if (doneCourseId) navigate(`/courses/${doneCourseId}`);
+                      }}
+                      onMouseEnter={(e) => {
+                        if (doneCourseId) e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent';
                       }}
                     >
                       <span className="material-symbols-outlined" style={{ color: '#536348', fontSize: 18, marginTop: 2, flexShrink: 0 }}>
@@ -1104,8 +1135,8 @@ export default function PlanYourDay() {
                           fontFamily: "'Space Grotesk', sans-serif", fontSize: 14,
                           fontWeight: 600, color: '#fbfaee', margin: 0, opacity: 0.8,
                         }}>
-                          {t.courseId ? (
-                            <Link to={`/courses/${t.courseId}`} style={{ color: 'inherit', textDecoration: 'inherit' }}>
+                          {doneCourseId ? (
+                            <Link to={`/courses/${doneCourseId}`} style={{ color: 'inherit', textDecoration: 'inherit' }}>
                               {t.text} <span style={{ fontSize: 11, opacity: 0.7 }}>↗</span>
                             </Link>
                           ) : t.text}
@@ -1118,7 +1149,8 @@ export default function PlanYourDay() {
                         </span>
                       </div>
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -1262,7 +1294,7 @@ export default function PlanYourDay() {
                   }}>
                     {weeklySearchResults.map((c) => (
                       <div
-                        key={c.courseId}
+                        key={c._id}
                         style={{ padding: '8px 12px', borderBottom: '1px solid #e9e9dd', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
                         onClick={() => { setSelectedWeeklyCourse(c); setNewWeeklyTask(c.title); setWeeklySearchResults([]); }}
                       >

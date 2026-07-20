@@ -1,6 +1,6 @@
 const GoalCompletion = require("../models/GoalCompletion");
 const User = require("../models/User");
-const { getTodayString } = require("../utils/dateHelpers");
+const { getTodayString, toDateString } = require("../utils/dateHelpers");
 
 // ─── Get Streak Data ──────────────────────────────────────────────────────────
 
@@ -27,12 +27,13 @@ const getStreak = async (req, res, next) => {
 
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
-      d.setUTCDate(d.getUTCDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
+      d.setDate(d.getDate() - i);
+      // Local date string — GoalCompletion.date keys are written in local time
+      const dateStr = toDateString(d);
       const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       days.push({
         date: dateStr,
-        dayLabel: dayNames[d.getUTCDay()],
+        dayLabel: dayNames[d.getDay()],
         isToday: i === 0,
         active: false, // will be filled below
       });
@@ -67,14 +68,14 @@ const getStreak = async (req, res, next) => {
 
     // If today isn't completed, start checking from yesterday
     if (!allDatesSet.has(todayStr)) {
-      checkDate.setUTCDate(checkDate.getUTCDate() - 1);
+      checkDate.setDate(checkDate.getDate() - 1);
     }
 
     for (let i = 0; i < 365; i++) {
-      const dateStr = checkDate.toISOString().slice(0, 10);
+      const dateStr = toDateString(checkDate);
       if (allDatesSet.has(dateStr)) {
         streak++;
-        checkDate.setUTCDate(checkDate.getUTCDate() - 1);
+        checkDate.setDate(checkDate.getDate() - 1);
       } else {
         break;
       }

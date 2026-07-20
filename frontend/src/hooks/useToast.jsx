@@ -1,12 +1,15 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useRef } from 'react';
 
 const ToastContext = createContext(null);
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  // Monotonic counter — Date.now() collides when two toasts land in the
+  // same millisecond, which breaks React keys and removes both at once
+  const nextId = useRef(0);
 
   const push = useCallback((msg, type = 'success') => {
-    const id = Date.now();
+    const id = nextId.current++;
     setToasts((t) => [...t, { id, msg, type }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
   }, []);
