@@ -1,7 +1,28 @@
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const generateToken = require("../utils/generateToken");
 const AppError = require("../utils/AppError");
+
+/**
+ * Generate a unique username from a display name.
+ * e.g. "John Doe" → "john_doe_a3f2"
+ */
+const generateUsername = async (name) => {
+  const base = name.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+  const suffix = crypto.randomBytes(2).toString("hex"); // 4 hex chars
+  let candidate = `${base}_${suffix}`;
+
+  // Ensure uniqueness (extremely unlikely to collide, but safe)
+  let existing = await User.findOne({ username: candidate });
+  while (existing) {
+    const s = crypto.randomBytes(2).toString("hex");
+    candidate = `${base}_${s}`;
+    existing = await User.findOne({ username: candidate });
+  }
+
+  return candidate;
+};
 
 // ─── Register ─────────────────────────────────────────────────────────────────
 
@@ -29,14 +50,18 @@ const registerUser = async (req, res, next) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 4. Create and save the new user
+    // 4. Auto-generate a username from the display name
+    const username = await generateUsername(name);
+
+    // 5. Create and save the new user
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
+      username,
     });
 
-    // 5. Issue a JWT for the new user
+    // 6. Issue a JWT for the new user
     const token = generateToken(user._id);
 
     res.status(201).json({
@@ -45,6 +70,8 @@ const registerUser = async (req, res, next) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        username: user.username,
+        profileImage: user.profileImage,
       },
     });
   } catch (err) {
@@ -90,6 +117,8 @@ const loginUser = async (req, res, next) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        username: user.username,
+        profileImage: user.profileImage,
       },
     });
   } catch (err) {

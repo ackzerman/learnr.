@@ -81,12 +81,12 @@ const getStreak = async (req, res, next) => {
       }
     }
 
-    // Get max streak from user
-    const user = await User.findById(userId).select("maxStreak").lean();
+    // Get max goal streak from user
+    const user = await User.findById(userId).select("maxGoalStreak").lean();
 
     res.status(200).json({
       currentStreak: streak,
-      maxStreak: user?.maxStreak ?? 0,
+      maxStreak: user?.maxGoalStreak ?? 0,
       last7Days: days,
       completedToday: completedSet.has(todayStr),
     });

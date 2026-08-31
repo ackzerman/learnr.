@@ -10,7 +10,7 @@ import Dashboard    from './pages/Dashboard';
 import Courses      from './pages/Courses';
 import CourseDetail from './pages/CourseDetail';
 import VideoPlayer  from './pages/VideoPlayer';
-import Analytics    from './pages/Analytics';
+
 import Profile      from './pages/Profile';
 import PlanYourDay  from './pages/PlanYourDay';
 
@@ -51,9 +51,7 @@ export default function App() {
             <Route path="/courses/:courseId/watch/:videoId" element={
               <ProtectedLayout><VideoPlayer /></ProtectedLayout>
             } />
-            <Route path="/analytics" element={
-              <ProtectedLayout><Analytics /></ProtectedLayout>
-            } />
+
             <Route path="/plan" element={
               <ProtectedLayout><PlanYourDay /></ProtectedLayout>
             } />

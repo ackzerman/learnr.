@@ -76,16 +76,28 @@ export default function Navbar() {
               onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
             >
               {/* Square avatar */}
-              <div style={{
-                width: 32, height: 32,
-                border: '2px solid #181f21',
-                background: '#d0e3c1',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 14, fontWeight: 800, color: '#181f21',
-                fontFamily: "'Space Grotesk', sans-serif",
-              }}>
-                {(user?.name || 'U')[0].toUpperCase()}
-              </div>
+              {user?.profileImage ? (
+                <img
+                  src={user.profileImage}
+                  alt={user.name}
+                  style={{
+                    width: 32, height: 32,
+                    border: '2px solid #181f21',
+                    objectFit: 'cover',
+                  }}
+                />
+              ) : (
+                <div style={{
+                  width: 32, height: 32,
+                  border: '2px solid #181f21',
+                  background: '#d0e3c1',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 14, fontWeight: 800, color: '#181f21',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                }}>
+                  {(user?.name || 'U')[0].toUpperCase()}
+                </div>
+              )}
               <span className="nav-tab" style={{
                 padding: 0, border: 'none',
                 color: isActive ? '#181f21' : '#434749',

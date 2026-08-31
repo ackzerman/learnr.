@@ -1,8 +1,8 @@
-const mongoose    = require("mongoose");
-const User         = require("../models/User");
-const Course       = require("../models/Course");
-const Video        = require("../models/Video");
-const Progress     = require("../models/Progress");
+const mongoose = require("mongoose");
+const User = require("../models/User");
+const Course = require("../models/Course");
+const Video = require("../models/Video");
+const Progress = require("../models/Progress");
 const DailyActivity = require("../models/DailyActivity");
 const { getTodayString, toDateString } = require("../utils/dateHelpers");
 
@@ -17,7 +17,7 @@ const { getTodayString, toDateString } = require("../utils/dateHelpers");
  */
 const getDashboard = async (req, res, next) => {
   try {
-    const userId    = req.userId;
+    const userId = req.userId;
     const userObjId = new mongoose.Types.ObjectId(userId);
 
     // ── Run all aggregations in parallel ──────────────────────────────────────
@@ -35,7 +35,7 @@ const getDashboard = async (req, res, next) => {
       _getHeatmap(userObjId),
       _getContinueWatching(userObjId),
       _getRecentCourses(userObjId),
-      User.findById(userId).select("streak maxStreak"),
+      User.findById(userId).select("maxGoalStreak"),
     ]);
 
     // ── Compose response ──────────────────────────────────────────────────────
@@ -49,8 +49,7 @@ const getDashboard = async (req, res, next) => {
         totalVideos,
         videosWatched,
         completionPercentage,
-        currentStreak: user?.streak ?? 0,
-        maxStreak: user?.maxStreak ?? 0,
+        maxStreak: user?.maxGoalStreak ?? 0,
       },
       heatmap,
       continueWatching,
@@ -85,10 +84,10 @@ const _getStats = async (userObjId) => {
       { $match: { userId: userObjId } },
       {
         $lookup: {
-          from:         "videos",      // MongoDB collection name (lowercase plural)
-          localField:   "_id",
+          from: "videos",      // MongoDB collection name (lowercase plural)
+          localField: "_id",
           foreignField: "courseId",
-          as:           "videos",
+          as: "videos",
         },
       },
       { $unwind: "$videos" },
@@ -100,7 +99,7 @@ const _getStats = async (userObjId) => {
   ]);
 
   return {
-    totalVideos:  totalVideosResult[0]?.total ?? 0,
+    totalVideos: totalVideosResult[0]?.total ?? 0,
     videosWatched,
   };
 };
@@ -128,12 +127,12 @@ const _getHeatmap = async (userObjId) => {
   }
 
   const startDate = dates[0];
-  const endDate   = dates[dates.length - 1]; // today
+  const endDate = dates[dates.length - 1]; // today
 
   // Fetch only the records that exist in this window
   const records = await DailyActivity.find({
     userId: userObjId,
-    date:   { $gte: startDate, $lte: endDate },
+    date: { $gte: startDate, $lte: endDate },
   }).select("date videosWatchedCount totalWatchSeconds");
 
   // Build a lookup map for O(1) access
@@ -143,7 +142,7 @@ const _getHeatmap = async (userObjId) => {
   for (const r of records) {
     const hasActivity = r.totalWatchSeconds > 0 || r.videosWatchedCount > 0;
     recordMap[r.date] = {
-      count:        hasActivity ? Math.max(r.videosWatchedCount, 1) : 0,
+      count: hasActivity ? Math.max(r.videosWatchedCount, 1) : 0,
       totalSeconds: r.totalWatchSeconds || 0,
     };
   }
@@ -151,7 +150,7 @@ const _getHeatmap = async (userObjId) => {
   // Merge with the full date window — missing dates get zeroed counts
   return dates.map((date) => ({
     date,
-    count:        recordMap[date]?.count        ?? 0,
+    count: recordMap[date]?.count ?? 0,
     totalSeconds: recordMap[date]?.totalSeconds ?? 0,
   }));
 };
@@ -177,9 +176,9 @@ const _getContinueWatching = async (userObjId) => {
     // Stage 1 — only in-progress (started but not finished) videos
     {
       $match: {
-        userId:         userObjId,
+        userId: userObjId,
         watchedSeconds: { $gt: 0 },
-        completed:      false,
+        completed: false,
       },
     },
 
@@ -192,10 +191,10 @@ const _getContinueWatching = async (userObjId) => {
     // Stage 4 — join the Video document
     {
       $lookup: {
-        from:         "videos",
-        localField:   "videoId",
+        from: "videos",
+        localField: "videoId",
         foreignField: "_id",
-        as:           "video",
+        as: "video",
       },
     },
     { $unwind: "$video" },
@@ -203,10 +202,10 @@ const _getContinueWatching = async (userObjId) => {
     // Stage 5 — join the Course document via the video's courseId
     {
       $lookup: {
-        from:         "courses",
-        localField:   "video.courseId",
+        from: "courses",
+        localField: "video.courseId",
         foreignField: "_id",
-        as:           "course",
+        as: "course",
       },
     },
     { $unwind: "$course" },
@@ -214,15 +213,15 @@ const _getContinueWatching = async (userObjId) => {
     // Stage 6 — project only the fields the frontend needs
     {
       $project: {
-        _id:            0,
-        videoId:        "$video._id",
-        videoTitle:     "$video.title",
-        videoUrl:       "$video.videoUrl",
-        thumbnailUrl:   "$video.thumbnailUrl",
-        courseId:       "$course._id",
-        courseTitle:    "$course.title",
+        _id: 0,
+        videoId: "$video._id",
+        videoTitle: "$video.title",
+        videoUrl: "$video.videoUrl",
+        thumbnailUrl: "$video.thumbnailUrl",
+        courseId: "$course._id",
+        courseTitle: "$course.title",
         watchedSeconds: 1,
-        duration:       "$video.duration",
+        duration: "$video.duration",
       },
     },
   ]);
@@ -254,10 +253,10 @@ const _getRecentCourses = async (userObjId) => {
     // Stage 2 — pull in videos for each course
     {
       $lookup: {
-        from:         "videos",
-        localField:   "_id",
+        from: "videos",
+        localField: "_id",
         foreignField: "courseId",
-        as:           "videos",
+        as: "videos",
       },
     },
 
@@ -265,14 +264,14 @@ const _getRecentCourses = async (userObjId) => {
     {
       $lookup: {
         from: "progresses",
-        let:  { videoIds: "$videos._id" },
+        let: { videoIds: "$videos._id" },
         pipeline: [
           {
             $match: {
               $expr: {
                 $and: [
-                  { $in:  ["$videoId",  "$$videoIds"] },
-                  { $eq:  ["$userId",   userObjId]    },
+                  { $in: ["$videoId", "$$videoIds"] },
+                  { $eq: ["$userId", userObjId] },
                 ],
               },
             },
@@ -326,17 +325,17 @@ const _getRecentCourses = async (userObjId) => {
     // Stage 6 — shape the final output
     {
       $project: {
-        _id:             0,
-        courseId:        "$_id",
-        title:           1,
-        source:          1,
-        tags:            1,
-        thumbnailUrl:    1,
-        firstVideoUrl:   { $arrayElemAt: ["$videos.videoUrl", 0] },
-        totalVideos:     { $size: "$videos" },
+        _id: 0,
+        courseId: "$_id",
+        title: 1,
+        source: 1,
+        tags: 1,
+        thumbnailUrl: 1,
+        firstVideoUrl: { $arrayElemAt: ["$videos.videoUrl", 0] },
+        totalVideos: { $size: "$videos" },
         completedVideos: 1,
-        createdAt:       1,
-        lastActivityAt:  1,
+        createdAt: 1,
+        lastActivityAt: 1,
       },
     },
   ]);

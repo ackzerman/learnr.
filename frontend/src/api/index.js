@@ -17,44 +17,44 @@ api.interceptors.response.use(
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 export const authAPI = {
-  login:    (body) => api.post('/auth/login', body),
+  login: (body) => api.post('/auth/login', body),
   register: (body) => api.post('/auth/register', body),
-  me:       ()     => api.get('/auth/me'),
+  me: () => api.get('/auth/me'),
 };
 
 // ─── Courses ──────────────────────────────────────────────────────────────────
 export const coursesAPI = {
-  list:               (page = 1, limit = 12, { tags = [], search = '' } = {}) => {
+  list: (page = 1, limit = 12, { tags = [], search = '' } = {}) => {
     let q = `/courses?page=${page}&limit=${limit}`;
     if (tags.length) q += `&tags=${encodeURIComponent(tags.join(','))}`;
     if (search.trim()) q += `&search=${encodeURIComponent(search.trim())}`;
     return api.get(q);
   },
-  getById:            (id)                   => api.get(`/courses/${id}`),
-  getDetails:         (id)                   => api.get(`/courses/${id}/details`),
-  createManual:       (body)                 => api.post('/courses/manual', body),
-  createYoutube:      (body)                 => api.post('/courses/youtube', body),
-  update:             (id, body)             => api.patch(`/courses/${id}`, body),
-  delete:             (id)                   => api.delete(`/courses/${id}`),
-  addVideo:           (courseId, body)       => api.post(`/courses/${courseId}/videos`, body),
-  updateVideo:        (courseId, videoId, body) => api.patch(`/courses/${courseId}/videos/${videoId}`, body),
-  removeVideo:        (courseId, videoId)    => api.delete(`/courses/${courseId}/videos/${videoId}`),
-  reorderVideos:      (courseId, videoIds)   => api.patch(`/courses/${courseId}/videos/reorder`, { videoIds }),
-  getYoutubeDuration: (videoId)              => api.get(`/courses/youtube/duration/${videoId}`),
-  searchVideos:       (query)                => api.get(`/courses/search/videos?q=${encodeURIComponent(query)}`),
+  getById: (id) => api.get(`/courses/${id}`),
+  getDetails: (id) => api.get(`/courses/${id}/details`),
+  createManual: (body) => api.post('/courses/manual', body),
+  createYoutube: (body) => api.post('/courses/youtube', body),
+  update: (id, body) => api.patch(`/courses/${id}`, body),
+  delete: (id) => api.delete(`/courses/${id}`),
+  addVideo: (courseId, body) => api.post(`/courses/${courseId}/videos`, body),
+  updateVideo: (courseId, videoId, body) => api.patch(`/courses/${courseId}/videos/${videoId}`, body),
+  removeVideo: (courseId, videoId) => api.delete(`/courses/${courseId}/videos/${videoId}`),
+  reorderVideos: (courseId, videoIds) => api.patch(`/courses/${courseId}/videos/reorder`, { videoIds }),
+  getYoutubeDuration: (videoId) => api.get(`/courses/youtube/duration/${videoId}`),
+  searchVideos: (query) => api.get(`/courses/search/videos?q=${encodeURIComponent(query)}`),
 };
 
 // ─── Progress ─────────────────────────────────────────────────────────────────
 export const progressAPI = {
-  update:     (videoId, watchedSeconds) => api.post('/progress', { videoId, watchedSeconds }),
-  toggleStar: (videoId)                 => api.patch(`/progress/${videoId}/star`),
+  update: (videoId, watchedSeconds) => api.post('/progress', { videoId, watchedSeconds }),
+  toggleStar: (videoId) => api.patch(`/progress/${videoId}/star`),
 };
 
 // ─── Notes ───────────────────────────────────────────────────────────────────
 export const notesAPI = {
-  get:    (videoId)          => api.get(`/notes/${videoId}`),
-  save:   (videoId, content) => api.post('/notes', { videoId, content }),
-  delete: (videoId)          => api.delete(`/notes/${videoId}`),
+  get: (videoId) => api.get(`/notes/${videoId}`),
+  save: (videoId, content) => api.post('/notes', { videoId, content }),
+  delete: (videoId) => api.delete(`/notes/${videoId}`),
 };
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -62,31 +62,45 @@ export const dashboardAPI = {
   get: () => api.get('/dashboard'),
 };
 
-// ─── Analytics ────────────────────────────────────────────────────────────────
-export const analyticsAPI = {
-  heatmap:       (range = '30d') => api.get(`/analytics/heatmap?range=${range}`),
-  heatmapByYear: (year)          => api.get(`/analytics/heatmap?year=${year}`),
-  heatmapYears:  ()              => api.get('/analytics/heatmap/years'),
-  summary:       ()              => api.get('/analytics/summary'),
-};
+
 
 // ─── Goals (Plan Your Day) ────────────────────────────────────────────────────
 export const goalsAPI = {
-  getToday:    ()           => api.get('/goals/today'),
-  getByDate:   (date)       => api.get(`/goals/date/${date}`),
-  save:        (body)       => api.post('/goals', body),
-  history:     (type, page) => api.get(`/goals/history?type=${type}&page=${page || 1}`),
-  addTask:     (body)       => api.post('/goals/tasks', body),
-  toggleTask:  (taskId, date) => api.patch(`/goals/tasks/${taskId}${date ? `?date=${date}` : ''}`),
-  deleteTask:  (taskId, date) => api.delete(`/goals/tasks/${taskId}${date ? `?date=${date}` : ''}`),
+  getToday: () => api.get('/goals/today'),
+  getByDate: (date) => api.get(`/goals/date/${date}`),
+  save: (body) => api.post('/goals', body),
+  history: (type, page) => api.get(`/goals/history?type=${type}&page=${page || 1}`),
+  addTask: (body) => api.post('/goals/tasks', body),
+  toggleTask: (taskId, date) => api.patch(`/goals/tasks/${taskId}${date ? `?date=${date}` : ''}`),
+  deleteTask: (taskId, date) => api.delete(`/goals/tasks/${taskId}${date ? `?date=${date}` : ''}`),
   // Weekly
-  getWeekly:         ()       => api.get('/goals/weekly'),
-  addWeeklyTask:     (body)   => api.post('/goals/weekly/tasks', body),
-  toggleWeeklyTask:  (taskId) => api.patch(`/goals/weekly/tasks/${taskId}`),
-  deleteWeeklyTask:  (taskId) => api.delete(`/goals/weekly/tasks/${taskId}`),
+  getWeekly: () => api.get('/goals/weekly'),
+  addWeeklyTask: (body) => api.post('/goals/weekly/tasks', body),
+  toggleWeeklyTask: (taskId) => api.patch(`/goals/weekly/tasks/${taskId}`),
+  deleteWeeklyTask: (taskId) => api.delete(`/goals/weekly/tasks/${taskId}`),
 };
 
 // ─── Streak ───────────────────────────────────────────────────────────────────
 export const streakAPI = {
-  get:      (month)  => api.get(month ? `/streak?month=${month}` : '/streak'),
+  get: (month) => api.get(month ? `/streak?month=${month}` : '/streak'),
+};
+
+// ─── User Profile ─────────────────────────────────────────────────────────────
+export const userAPI = {
+  updateProfile: (body) => api.put('/users/profile', body),
+  uploadImage: (file) => {
+    const fd = new FormData();
+    fd.append('profileImage', file);
+    return api.put('/users/profile/image', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  removeImage: () => api.delete('/users/profile/image'),
+  // Analytics
+  heatmap: (range = '30d') => api.get(`/users/analytics/heatmap?range=${range}`),
+  heatmapByYear: (year) => api.get(`/users/analytics/heatmap?year=${year}`),
+  heatmapYears: () => api.get('/users/analytics/heatmap/years'),
+  summary: () => api.get('/users/analytics/summary'),
+  // Activity Streak (video watching)
+  activityStreak: () => api.get('/users/activity-streak'),
 };

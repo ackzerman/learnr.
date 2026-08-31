@@ -1,9 +1,57 @@
-const Video        = require("../models/Video");
-const Course       = require("../models/Course");
-const Progress     = require("../models/Progress");
+const Video = require("../models/Video");
+const Course = require("../models/Course");
+const Progress = require("../models/Progress");
 const DailyActivity = require("../models/DailyActivity");
-const AppError     = require("../utils/AppError");
+const User = require("../models/User");
+const AppError = require("../utils/AppError");
 const { getTodayString, toDateString } = require("../utils/dateHelpers");
+
+// ─── Helper: Recalculate Max Activity Streak ──────────────────────────────────
+
+/**
+ * Walks all DailyActivity records (sorted by date) to find the longest
+ * consecutive run of days with video-watching activity, and persists
+ * `maxActivityStreak` to the User document.
+ *
+ * The *current* activity streak is NOT saved — it is computed on the fly
+ * when the Profile page requests it.
+ *
+ * @param {string} userId
+ */
+const _recalculateMaxActivityStreak = async (userId) => {
+  const activities = await DailyActivity.find({ userId })
+    .sort({ date: -1 })
+    .limit(365)
+    .select("date videosWatchedCount totalWatchSeconds")
+    .lean();
+
+  // Only count days with actual watch activity
+  const activeDates = activities
+    .filter((a) => a.totalWatchSeconds > 0 || a.videosWatchedCount > 0)
+    .map((a) => a.date);
+
+  if (activeDates.length === 0) {
+    await User.findByIdAndUpdate(userId, { maxActivityStreak: 0 });
+    return;
+  }
+
+  // activeDates is sorted descending — walk them counting consecutive runs
+  let maxStreak = 0;
+  let run = 0;
+  let prev = null;
+  for (const date of activeDates) {
+    if (prev !== null) {
+      const gap = (new Date(prev) - new Date(date)) / 86400000;
+      run = gap === 1 ? run + 1 : 1;
+    } else {
+      run = 1;
+    }
+    if (run > maxStreak) maxStreak = run;
+    prev = date;
+  }
+
+  await User.findByIdAndUpdate(userId, { maxActivityStreak: maxStreak });
+};
 
 /**
  * Load a video and verify its course belongs to the given user.
@@ -34,7 +82,7 @@ const _findOwnedVideo = async (videoId, userId) => {
  */
 const updateProgress = async (req, res, next) => {
   try {
-    const userId                   = req.userId;
+    const userId = req.userId;
     const { videoId, watchedSeconds } = req.body;
 
     // ── 1. Validate input ─────────────────────────────────────────────────────
@@ -86,7 +134,7 @@ const updateProgress = async (req, res, next) => {
     // ── 5. Update progress fields ─────────────────────────────────────────────
 
     progress.watchedSeconds = newWatchedSeconds;
-    progress.lastWatchedAt  = new Date();
+    progress.lastWatchedAt = new Date();
 
     // Mark complete when >= 90% of the video has been watched
     const completionThreshold = video.duration * 0.9;
@@ -117,11 +165,13 @@ const updateProgress = async (req, res, next) => {
         {
           $inc: {
             videosWatchedCount: isFirstWatchToday ? 1 : 0, // Count each video once per day
-            totalWatchSeconds:  deltaSeconds,
+            totalWatchSeconds: deltaSeconds,
           },
         },
         { upsert: true, new: true }
       );
+      // Recalculate max activity streak after recording new activity
+      await _recalculateMaxActivityStreak(userId);
     }
 
     // ── 7. Respond ────────────────────────────────────────────────────────────
@@ -138,7 +188,7 @@ const updateProgress = async (req, res, next) => {
 };
 
 // ─── Toggle Star ──────────────────────────────────────────────────────────────
- 
+
 /**
  * @route   PATCH /api/progress/:videoId/star
  * @desc    Toggle the starred flag on a user's progress record for a video.
@@ -148,25 +198,25 @@ const updateProgress = async (req, res, next) => {
  */
 async function toggleStar(req, res, next) {
   try {
-    const userId  = req.userId;
+    const userId = req.userId;
     const { videoId } = req.params;
- 
+
     // Validate the video exists and belongs to this user
     const video = await _findOwnedVideo(videoId, userId);
     if (!video) {
       return next(new AppError("Video not found.", 404));
     }
- 
+
     // Find or create a progress record for this user + video
     let progress = await Progress.findOne({ userId, videoId });
- 
+
     if (!progress) {
       progress = await Progress.create({
         userId,
         videoId,
         watchedSeconds: 0,
-        completed:      false,
-        starred:        true,   // first action is always starring
+        completed: false,
+        starred: true,   // first action is always starring
       });
     } else {
       progress.starred = !progress.starred;

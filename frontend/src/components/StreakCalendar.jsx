@@ -195,7 +195,7 @@ export default function StreakCalendar({ streak, compact = false }) {
               lineHeight: 1,
             }}
           >
-            {streak?.currentStreak ?? 0} Day{(streak?.currentStreak ?? 0) !== 1 ? 's' : ''}
+            {streak?.maxStreak ?? 0} Day{(streak?.maxStreak ?? 0) !== 1 ? 's' : ''}
           </span>
           <span
             style={{
@@ -207,7 +207,7 @@ export default function StreakCalendar({ streak, compact = false }) {
               textTransform: 'uppercase',
             }}
           >
-            CURRENT STREAK
+            BEST STREAK
           </span>
         </div>
       </div>

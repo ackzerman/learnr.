@@ -69,7 +69,7 @@ const toDateString = (date) => {
  *            shouldUpdate = false when the user already logged activity today
  */
 const calculateStreak = (lastActiveDate, currentStreak) => {
-  const today     = getTodayString();
+  const today = getTodayString();
   const yesterday = getYesterdayString();
 
   // No last active date means this is the user's very first activity

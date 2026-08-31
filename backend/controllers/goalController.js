@@ -317,8 +317,12 @@ const getHistory = async (req, res, next) => {
 // ─── Helper: Recalculate Streak ───────────────────────────────────────────────
 
 /**
- * Walks backwards from today through consecutive GoalCompletion records
- * to compute the current streak. Updates the User document.
+ * Walks through all GoalCompletion records to find the longest consecutive
+ * run (max goal streak). Saves only `maxGoalStreak` to the User document.
+ *
+ * The *current* goal streak is intentionally NOT saved — it is computed
+ * on the fly by the read endpoints so it stays accurate even if the user
+ * doesn't log in for several days.
  *
  * @param {string} userId
  */
@@ -331,37 +335,11 @@ const _recalculateStreak = async (userId) => {
     .lean();
 
   if (completions.length === 0) {
-    await User.findByIdAndUpdate(userId, { streak: 0, maxStreak: 0, lastActiveDate: new Date() });
+    await User.findByIdAndUpdate(userId, { maxGoalStreak: 0 });
     return;
   }
 
-  const completedDates = new Set(completions.map((c) => c.date));
-  const today = getTodayString();
-
-  // Start counting from today or yesterday
-  let streak = 0;
-  let checkDate = new Date();
-
-  // If today isn't completed, check if yesterday started a streak
-  if (!completedDates.has(today)) {
-    checkDate.setDate(checkDate.getDate() - 1);
-  }
-
-  // Walk backwards counting consecutive completed days
-  for (let i = 0; i < 365; i++) {
-    const y = checkDate.getFullYear();
-    const m = String(checkDate.getMonth() + 1).padStart(2, '0');
-    const day = String(checkDate.getDate()).padStart(2, '0');
-    const dateStr = `${y}-${m}-${day}`;
-    if (completedDates.has(dateStr)) {
-      streak++;
-      checkDate.setDate(checkDate.getDate() - 1);
-    } else {
-      break;
-    }
-  }
-
-  // Recompute max streak from the records themselves (longest consecutive
+  // Compute max streak from the records themselves (longest consecutive
   // run), so a rolled-back completion doesn't leave an inflated max behind.
   // completions are sorted date-descending; walk them counting runs.
   let maxStreak = 0;
@@ -378,11 +356,7 @@ const _recalculateStreak = async (userId) => {
     prev = date;
   }
 
-  const user = await User.findById(userId);
-  user.streak = streak;
-  user.maxStreak = maxStreak;
-  user.lastActiveDate = new Date();
-  await user.save();
+  await User.findByIdAndUpdate(userId, { maxGoalStreak: maxStreak });
 };
 
 // ─── Get Weekly Goal ──────────────────────────────────────────────────────────

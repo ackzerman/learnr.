@@ -20,6 +20,31 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    username: {
+      type: String,
+      unique: true,
+      sparse: true,        // Allows existing docs without username
+      lowercase: true,
+      trim: true,
+      minlength: [3, "Username must be at least 3 characters"],
+      maxlength: [30, "Username must be at most 30 characters"],
+      match: [
+        /^[a-zA-Z0-9_]+$/,
+        "Username can only contain letters, numbers, and underscores",
+      ],
+    },
+
+    profileImage: {
+      type: String,
+      default: "",          // Empty = use initials fallback on frontend
+    },
+
+    // Cloudinary public_id — needed to delete/replace the old image
+    profileImagePublicId: {
+      type: String,
+      default: "",
+    },
+
     email: {
       type: String,
       required: [true, "Email is required"],
@@ -38,21 +63,18 @@ const userSchema = new mongoose.Schema(
       minlength: [6, "Password must be at least 6 characters"],
     },
 
-    // Number of consecutive days the user has been active
-    streak: {
+    // Highest all-time daily-goals streak — only increases, never decreases.
+    // Current goal streak is computed on the fly from GoalCompletion records.
+    maxGoalStreak: {
       type: Number,
       default: 0,
     },
 
-    // Highest streak the user has ever achieved — never decreases
-    maxStreak: {
+    // Highest all-time video-watching activity streak — only increases.
+    // Current activity streak is computed on the fly from DailyActivity records.
+    maxActivityStreak: {
       type: Number,
       default: 0,
-    },
-
-    // Used alongside DailyActivity to compute and update the streak
-    lastActiveDate: {
-      type: Date,
     },
   },
   {

@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authAPI, analyticsAPI } from '../api';
+import { authAPI, userAPI } from '../api';
 import { fmt, fmtDate } from '../utils';
-import { Spinner, Heatmap, HeatmapLegend } from '../components/UI';
+import { Spinner, Heatmap, HeatmapLegend, Modal } from '../components/UI';
 import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, AreaChart, Area,
@@ -37,8 +38,204 @@ const getWeekStart = (dateStr) => {
 };
 
 
+/* ════════════════════════════════════════════════════════════════════
+   Edit Profile Modal
+   ════════════════════════════════════════════════════════════════════ */
+function EditProfileModal({ user, onClose, onSaved }) {
+  const toast = useToast();
+  const fileRef = useRef(null);
+
+  const [name, setName] = useState(user.name || '');
+  const [username, setUsername] = useState(user.username || '');
+  const [preview, setPreview] = useState(user.profileImage || '');
+  const [file, setFile] = useState(null);
+  const [removeImg, setRemoveImg] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 5 * 1024 * 1024) {
+      setError('Image must be under 5 MB.');
+      return;
+    }
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+    setRemoveImg(false);
+    setError('');
+  };
+
+  const handleRemoveImage = () => {
+    setFile(null);
+    setPreview('');
+    setRemoveImg(true);
+  };
+
+  const handleSave = async () => {
+    setError('');
+    if (!name.trim()) { setError('Name cannot be empty.'); return; }
+    if (username.trim().length < 3) { setError('Username must be at least 3 characters.'); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(username.trim())) { setError('Username: only letters, numbers, underscores.'); return; }
+
+    setSaving(true);
+    try {
+      // 1. Update text fields
+      await userAPI.updateProfile({ name: name.trim(), username: username.trim() });
+
+      // 2. Handle image
+      if (file) {
+        await userAPI.uploadImage(file);
+      } else if (removeImg && user.profileImage) {
+        await userAPI.removeImage();
+      }
+
+      toast('Profile updated!', 'success');
+      onSaved();
+    } catch (err) {
+      setError(err.message || 'Failed to update profile.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
+
+  return (
+    <Modal title="Edit Profile" onClose={onClose}>
+      {/* ── Avatar ─────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 24 }}>
+        <div
+          onClick={() => fileRef.current?.click()}
+          style={{
+            width: 88, height: 88, cursor: 'pointer', position: 'relative',
+            border: '3px solid #181f21', background: '#d0e3c1',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden', flexShrink: 0,
+          }}
+        >
+          {preview ? (
+            <img src={preview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <span style={{
+              fontSize: 32, fontWeight: 800, color: '#181f21',
+              fontFamily: "'Space Grotesk', sans-serif",
+            }}>{initials}</span>
+          )}
+          {/* Hover overlay */}
+          <div style={{
+            position: 'absolute', inset: 0, background: 'rgba(24,31,33,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: 0, transition: 'opacity 0.2s',
+          }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#fff' }}>photo_camera</span>
+          </div>
+        </div>
+        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={handleFile} />
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            onClick={() => fileRef.current?.click()}
+            style={{
+              background: '#d6e8c6', border: '2px solid #181f21', padding: '8px 16px',
+              fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600,
+              cursor: 'pointer', color: '#181f21',
+            }}
+          >Upload Photo</button>
+          {(preview || user.profileImage) && (
+            <button
+              onClick={handleRemoveImage}
+              style={{
+                background: 'transparent', border: '2px solid #c3c7c8', padding: '8px 16px',
+                fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', color: '#747879',
+              }}
+            >Remove</button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Name field ────────────────────────── */}
+      <label style={{
+        display: 'block', marginBottom: 16,
+      }}>
+        <span className="label-caps" style={{ color: '#434749', marginBottom: 6, display: 'block' }}>Name</span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="input"
+          style={{ width: '100%', boxSizing: 'border-box' }}
+        />
+      </label>
+
+      {/* ── Username field ────────────────────── */}
+      <label style={{
+        display: 'block', marginBottom: 16,
+      }}>
+        <span className="label-caps" style={{ color: '#434749', marginBottom: 6, display: 'block' }}>Username</span>
+        <div style={{ position: 'relative' }}>
+          <span style={{
+            position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
+            color: '#959c9f', fontSize: 15, fontFamily: "'Public Sans', sans-serif",
+            zIndex: 1,
+          }}>@</span>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+            maxLength={30}
+            className="input"
+            style={{ width: '100%', paddingLeft: 30, boxSizing: 'border-box' }}
+          />
+        </div>
+        <span style={{ fontSize: 12, color: '#959c9f', marginTop: 4, display: 'block' }}>
+          Letters, numbers, underscores only • 3–30 characters
+        </span>
+      </label>
+
+      {/* ── Error ─────────────────────────────── */}
+      {error && (
+        <p style={{
+          color: '#ba1a1a', fontSize: 13, margin: '0 0 16px',
+          padding: '8px 12px', background: '#ffdad6', border: '2px solid #ba1a1a',
+        }}>{error}</p>
+      )}
+
+      {/* ── Actions ───────────────────────────── */}
+      <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{
+            flex: 1, padding: '12px 0',
+            background: saving ? '#c3c7c8' : '#181f21', color: '#fbfaee',
+            border: '2px solid #181f21',
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: 16, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
+            transition: 'all 0.15s',
+          }}
+        >{saving ? 'Saving…' : 'Save Changes'}</button>
+        <button
+          onClick={onClose}
+          disabled={saving}
+          style={{
+            padding: '12px 24px',
+            background: '#fbfaee', color: '#181f21',
+            border: '2px solid #181f21',
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: 16, fontWeight: 600, cursor: 'pointer',
+          }}
+        >Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
+
 export default function Profile() {
-  const { logout } = useAuth();
+  const { logout, refreshUser } = useAuth();
   const navigate = useNavigate();
 
   const [user, setUser] = useState(null);
@@ -47,6 +244,18 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('weekly');
   const [pageOffset, setPageOffset] = useState(0);
+  const [editOpen, setEditOpen] = useState(false);
+  const [activityStreak, setActivityStreak] = useState(null);
+
+  const handleEditSaved = async () => {
+    setEditOpen(false);
+    await refreshUser();
+    // Also refresh local user state
+    try {
+      const u = await authAPI.me();
+      setUser(u.user);
+    } catch (_) { }
+  };
 
   const handleViewChange = (v) => {
     setView(v);
@@ -56,13 +265,15 @@ export default function Profile() {
   useEffect(() => {
     Promise.all([
       authAPI.me(),
-      analyticsAPI.summary(),
-      analyticsAPI.heatmap('year'),
+      userAPI.summary(),
+      userAPI.heatmap('year'),
+      userAPI.activityStreak(),
     ])
-      .then(([u, s, h]) => {
+      .then(([u, s, h, as]) => {
         setUser(u.user);
         setSummary(s);
         setHeatmap(h.heatmap || []);
+        setActivityStreak(as);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -166,26 +377,42 @@ export default function Profile() {
           }}>
             {/* Avatar */}
             <div style={{ position: 'relative', marginBottom: 24 }}>
-              <div style={{
-                width: '100%', aspectRatio: '1/1',
-                background: '#d0e3c1',
-                border: '2px solid #181f21',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 64, fontWeight: 800, color: '#181f21',
-                fontFamily: "'Space Grotesk', sans-serif",
-                letterSpacing: '-0.02em',
-                filter: 'grayscale(0)',
-                transition: 'all 0.5s',
-              }}>
-                {initials}
-              </div>
+              {user.profileImage ? (
+                <img
+                  src={user.profileImage}
+                  alt={user.name}
+                  style={{
+                    width: '100%', aspectRatio: '1/1',
+                    objectFit: 'cover',
+                    border: '2px solid #181f21',
+                    display: 'block',
+                  }}
+                />
+              ) : (
+                <div style={{
+                  width: '100%', aspectRatio: '1/1',
+                  background: '#d0e3c1',
+                  border: '2px solid #181f21',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 64, fontWeight: 800, color: '#181f21',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  letterSpacing: '-0.02em',
+                  transition: 'all 0.5s',
+                }}>
+                  {initials}
+                </div>
+              )}
               {/* Edit icon badge */}
-              <div style={{
-                position: 'absolute', bottom: -8, right: -8,
-                background: '#d6e8c6',
-                border: '2px solid #181f21',
-                padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
+              <div
+                onClick={() => setEditOpen(true)}
+                style={{
+                  position: 'absolute', bottom: -8, right: -8,
+                  background: '#d6e8c6',
+                  border: '2px solid #181f21',
+                  padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer',
+                }}
+              >
                 <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#181f21' }}>edit</span>
               </div>
             </div>
@@ -198,7 +425,7 @@ export default function Profile() {
                 margin: '0 0 4px', lineHeight: 1.3,
               }}>{user.name}</h2>
               <p className="label-caps" style={{ color: '#434749', margin: 0 }}>
-                @{user.name.toLowerCase().replace(/\s+/g, '')}
+                @{user.username || user.name.toLowerCase().replace(/\s+/g, '')}
               </p>
             </div>
 
@@ -216,6 +443,7 @@ export default function Profile() {
 
             {/* Edit Profile button */}
             <button
+              onClick={() => setEditOpen(true)}
               style={{
                 width: '100%', marginTop: 16, padding: '12px 0',
                 background: '#fbfaee', color: '#181f21',
@@ -320,13 +548,13 @@ export default function Profile() {
               padding: 24,
               boxShadow: '4px 4px 0px 0px #181f21',
             }}>
-              <p className="label-caps" style={{ color: '#959c9f', margin: '0 0 8px' }}>Streak Status</p>
+              <p className="label-caps" style={{ color: '#959c9f', margin: '0 0 8px' }}>Activity Streak</p>
               <p style={{
                 fontFamily: "'Space Grotesk', sans-serif",
                 fontSize: 24, fontWeight: 600, color: '#ffffff',
                 margin: '0 0 4px', lineHeight: 1.3,
               }}>
-                {user.streak} Days{' '}
+                {activityStreak?.currentActivityStreak ?? 0} Days{' '}
                 <span style={{ color: '#959c9f', fontSize: 16, fontFamily: "'Public Sans', sans-serif", fontWeight: 400, opacity: 0.6 }}>// Current</span>
               </p>
               <p style={{
@@ -334,7 +562,7 @@ export default function Profile() {
                 fontSize: 24, fontWeight: 600, color: '#d6e8c6',
                 margin: 0, lineHeight: 1.3,
               }}>
-                {user.maxStreak ?? user.streak} Days{' '}
+                {activityStreak?.maxActivityStreak ?? 0} Days{' '}
                 <span style={{ color: '#959c9f', fontSize: 16, fontFamily: "'Public Sans', sans-serif", fontWeight: 400, opacity: 0.6 }}>// All-time</span>
               </p>
             </div>
@@ -516,6 +744,14 @@ export default function Profile() {
 
         </div>
       </div>
+      {/* ═══════════════════ EDIT PROFILE MODAL ═══════════════════ */}
+      {editOpen && (
+        <EditProfileModal
+          user={user}
+          onClose={() => setEditOpen(false)}
+          onSaved={handleEditSaved}
+        />
+      )}
     </div>
   );
 }
