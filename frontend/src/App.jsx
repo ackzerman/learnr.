@@ -6,6 +6,7 @@ import { Spinner }  from './components/UI';
 
 import Login        from './pages/Login';
 import Register     from './pages/Register';
+import OAuthCallback from './pages/OAuthCallback';
 import Dashboard    from './pages/Dashboard';
 import Courses      from './pages/Courses';
 import CourseDetail from './pages/CourseDetail';
@@ -16,9 +17,9 @@ import PlanYourDay  from './pages/PlanYourDay';
 
 /* ─── Protected layout ──────────────────────────────────────────────────── */
 function ProtectedLayout({ children }) {
-  const { token, loading } = useAuth();
-  if (loading) return <Spinner pad={120} />;
-  if (!token)  return <Navigate to="/login" replace />;
+  const { user, loading, initialized } = useAuth();
+  if (loading || !initialized) return <Spinner pad={120} />;
+  if (!user)  return <Navigate to="/login" replace />;
   return (
     <>
       <Navbar />
@@ -37,6 +38,7 @@ export default function App() {
             {/* Public */}
             <Route path="/login"    element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/oauth/callback" element={<OAuthCallback />} />
 
             {/* Protected */}
             <Route path="/" element={

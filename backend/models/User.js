@@ -59,15 +59,24 @@ const userSchema = new mongoose.Schema(
 
     password: {
       type: String,
-      required: [true, "Password is required"],
+      // Required for local accounts; OAuth-only accounts store an unusable random hash.
+      // Required-ness is enforced in controller logic to allow Google-only users.
+      required: false,
       minlength: [6, "Password must be at least 6 characters"],
     },
 
-    // Highest all-time daily-goals streak — only increases, never decreases.
-    // Current goal streak is computed on the fly from GoalCompletion records.
-    maxGoalStreak: {
-      type: Number,
-      default: 0,
+    // Google OIDC identity — stable `sub` claim. Never use email as the key.
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
+
+    authProvider: {
+      type: String,
+      enum: ["local", "google", "both"],
+      default: "local",
     },
 
     // Highest all-time video-watching activity streak — only increases.

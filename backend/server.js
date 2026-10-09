@@ -3,6 +3,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 
 const connectDB = require("./config/db");
@@ -32,14 +33,26 @@ connectDB();
 
 // Parse incoming JSON request bodies (limit payload size to prevent DoS)
 app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
+if (process.env.NODE_ENV === "production") app.set("trust proxy", 1);
 
-// Enable Cross-Origin Resource Sharing — restricted to frontend origin
+// Enable Cross-Origin Resource Sharing — restricted to frontend origin(s)
+const corsOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(",")
+  .map((s) => s.trim().replace(/\/$/, ""))
+  .filter(Boolean);
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: (origin, cb) => {
+    // Allow same-origin / non-browser requests with no Origin header.
+    if (!origin) return cb(null, true);
+    return cb(null, corsOrigins.includes(origin.replace(/\/$/, "")));
+  },
   credentials: true,
 }));
 
 // Rate limiter for auth endpoints — prevents brute-force and credential stuffing
+// NOTE: mounted only on login/register/google-start to avoid locking out
+// legitimate refresh/logout cookie flows; refresh has its own limiter below.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15-minute window
   max: 20,                   // max 20 requests per window per IP
@@ -51,7 +64,7 @@ const authLimiter = rateLimit({
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.use("/api/health", healthRoute);
-app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/courses", courseRoutes);   
 app.use("/api/progress", progressRoutes);  
  
@@ -75,6 +88,10 @@ app.use(errorHandler);
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

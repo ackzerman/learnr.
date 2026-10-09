@@ -1,4 +1,4 @@
-const jwt = require("jsonwebtoken");
+const { verifyAccessToken } = require("../utils/tokens");
 const AppError = require("../utils/AppError");
 
 /**
@@ -6,6 +6,7 @@ const AppError = require("../utils/AppError");
  * Verifies the JWT supplied in the Authorization header.
  * On success, attaches the decoded userId to req for downstream use.
  *
+ * Accepts both `sub` (new) and `userId` (legacy) claims.
  * Expected header format:
  *   Authorization: Bearer <token>
  */
@@ -22,10 +23,11 @@ const protect = (req, res, next) => {
 
   // 3. Verify and decode the token
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyAccessToken(token);
 
     // 4. Attach userId to the request object for use in controllers
-    req.userId = decoded.userId;
+    req.userId = decoded.sub || decoded.userId;
+    if (!req.userId) return next(new AppError("Invalid token. Access denied.", 401));
 
     next();
   } catch (err) {

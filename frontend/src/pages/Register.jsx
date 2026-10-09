@@ -18,7 +18,7 @@ export default function Register() {
     setErr(''); setBusy(true);
     try {
       const d = await authAPI.register(form);
-      login(d.token, d.user);
+      login(d.accessToken || d.token, d.user);
       navigate('/');
     } catch (e) {
       setErr(e.message);
@@ -71,6 +71,9 @@ export default function Register() {
             <ErrBox msg={err} />
             <button type="submit" className="btn-primary" disabled={busy} style={{ width: '100%', padding: 14, fontSize: 16 }}>
               {busy ? 'Creating account…' : 'CREATE ACCOUNT'}
+            </button>
+            <button type="button" className="btn-primary" onClick={() => authAPI.googleStart()} style={{ width: '100%', padding: 14, fontSize: 14, background: '#ffffff', color: '#181f21' }}>
+              Continue with Google
             </button>
           </form>
 

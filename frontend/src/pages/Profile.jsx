@@ -279,7 +279,7 @@ export default function Profile() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleLogout = () => { logout(); navigate('/login'); };
+  const handleLogout = async () => { await logout(); navigate('/login'); };
 
   if (loading) return <Spinner pad={80} />;
   if (!user) return <p style={{ color: '#747879', textAlign: 'center', padding: 60 }}>Could not load profile.</p>;
@@ -459,6 +459,21 @@ export default function Profile() {
             >
               Edit Profile
             </button>
+            {/* Link Google account — only for password accounts not yet linked */}
+            {!user.googleId && (
+              <button
+                onClick={() => authAPI.googleStart()}
+                style={{
+                  width: '100%', marginTop: 12, padding: '12px 0',
+                  background: '#ffffff', color: '#181f21',
+                  border: '2px solid #181f21',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Link Google account
+              </button>
+            )}
           </div>
 
           {/* Sign Out */}
